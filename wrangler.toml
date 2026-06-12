@@ -1,0 +1,32 @@
+name = "aaron-public"
+main = 'src/index.ts'
+# account_id = "ccb9d9a85d963479d13e7dde46d98d6d"  # set via wrangler login or env
+workers_dev = false
+compatibility_date = "2026-06-11"
+compatibility_flags = [
+  "nodejs_compat",
+  "nodejs_compat_populate_process_env"
+]
+
+# Tail worker for logs (reuse your existing if you have one like poof-log-tail)
+# tail_consumers = [{ service = "poof-log-tail" }]
+
+[vars]
+AARON_ORIGIN = "https://aaron.jettoptics.ai"
+ENV = "production"
+# CORS - update with your actual domains (from your other workers)
+CORS_DEV_DOMAINS = ""
+CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://jettoptx.vercel.app,capacitor://localhost,http://localhost:*"
+
+[limits]
+cpu_ms = 300_000
+
+# Routes - attach this Worker to the public AARON hostname
+# After first deploy, or configure in dashboard too.
+[[routes]]
+pattern = "aaron.jettoptics.ai/*"
+zone_name = "jettoptics.ai"
+custom_domain = true
+
+# Optional: also support a dedicated worker subdomain for testing
+# workers_dev = true  (uncomment and set name accordingly if needed)
