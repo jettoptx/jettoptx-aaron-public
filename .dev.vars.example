@@ -1,0 +1,18 @@
+# Local dev overrides for `wrangler dev` — copy to `.dev.vars` and fill in.
+# `.dev.vars` is gitignored. Use placeholder values here only — never commit real values.
+#
+# These mirror the [vars] block in wrangler.toml so you can override them locally
+# without editing the production config. This Worker uses NO secrets today; if you
+# add any later, set them with `wrangler secret put <NAME>` (do not put secrets here).
+
+# Upstream AARON origin this gateway proxies to.
+AARON_ORIGIN="https://example.invalid"
+
+# Environment label ("production" | "development" | "preview").
+ENV="development"
+
+# Comma-separated allowed CORS origins for production.
+CORS_PROD_DOMAINS="https://*.example.invalid"
+
+# Comma-separated allowed CORS origins for local/dev (e.g. http://localhost:*).
+CORS_DEV_DOMAINS="http://localhost:*"

@@ -1,6 +1,5 @@
 name = "aaron-public"
 main = 'src/index.ts'
-# account_id = "ccb9d9a85d963479d13e7dde46d98d6d"  # set via wrangler login or env
 workers_dev = false
 compatibility_date = "2026-06-11"
 compatibility_flags = [

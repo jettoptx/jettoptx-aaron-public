@@ -1,0 +1,18 @@
+# Local secrets / dev vars (never commit)
+.dev.vars
+.env
+.env.*
+!.dev.vars.example
+
+# Dependencies
+node_modules/
+
+# Wrangler / build artifacts
+.wrangler/
+dist/
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store

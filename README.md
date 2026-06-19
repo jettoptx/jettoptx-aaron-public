@@ -66,6 +66,18 @@ Configured via `CORS_PROD_DOMAINS` / `CORS_DEV_DOMAINS` in wrangler.toml (comma 
 
 Add your Vercel preview domains, localhost for dev, capacitor origins, etc.
 
+## Environment / local config
+
+Runtime configuration lives in the `[vars]` block of `wrangler.toml` (`AARON_ORIGIN`, `ENV`, `CORS_PROD_DOMAINS`, `CORS_DEV_DOMAINS`).
+
+For local development you can override these without touching the production config: copy `.dev.vars.example` to `.dev.vars` (which is gitignored) and edit the values. The example file contains placeholders only.
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+This Worker uses no secrets today. If you add any, set them with `npx wrangler secret put <NAME>` — never put real values in `.dev.vars.example` or commit them.
+
 ## Observability
 
 - `X-Request-ID` is generated (or passed through) on every request and echoed back + logged.
@@ -92,7 +104,7 @@ See the cloudflare skill `references/tunnel/` for patterns.
 
 ## Deployed name / account
 
-Update `name` and `account_id` (or remove account_id and rely on `wrangler login`) as needed. The current example matches your other production Workers.
+The Cloudflare account is resolved via `wrangler login` (or the `CLOUDFLARE_ACCOUNT_ID` environment variable in CI). Update `name` in `wrangler.toml` if you need a different Worker name.
 
 ---
 
