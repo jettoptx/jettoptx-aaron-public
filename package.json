@@ -1,16 +1,19 @@
 {
-  "name": "aaron-public",
-  "version": "0.1.0",
+  "name": "jettoptx-aaron-hedgehog",
+  "version": "0.2.0",
   "private": true,
+  "description": "Gated Cloudflare edge gateway — AARON attestation + HEDGEHOG MCP (JOE API tokens)",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "deploy:preview": "wrangler deploy --env preview",
     "tail": "wrangler tail",
-    "types": "wrangler types"
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250611.0",
+    "typescript": "^5.4.0",
     "wrangler": "^4.0.0"
   }
 }
