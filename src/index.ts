@@ -1,145 +1,72 @@
 /**
- * AARON Public Gateway Worker
- * Edge proxy / gateway in front of the AARON tunnel backend (aaron.jettoptics.ai).
- * 
- * Benefits:
- * - Unified CORS, request IDs, logging
- * - Easy to add rate limiting, auth, observability (Sentry, Analytics Engine, etc.)
- * - Future: move more logic to the edge or add caching
- * 
- * Primary origin: the Cloudflare Tunnel (or fallback Tailscale direct on Jetson).
- * Update the clients (aaronClient.ts etc.) BASE_URL to point here once deployed.
+ * jettoptx-aaron-hedgehog — Gated edge gateway for AARON + HEDGEHOG MCP
+ *
+ * JOE-issued API tokens required for MCP (issue at jettoptx.chat/support).
+ * AARON paths: attestation, gaze verify, handshake (not Grok mint path).
+ * HEDGEHOG paths: MCP tools, Grok proxy to Jetson :8811.
  */
 
-interface Env {
-  AARON_ORIGIN: string;
-  ENV: string;
-  CORS_PROD_DOMAINS?: string;
-  CORS_DEV_DOMAINS?: string;
-}
-
-const ALLOWED_METHODS = 'GET, POST, PUT, DELETE, OPTIONS';
-
-function getCorsHeaders(request: Request, env: Env): Headers {
-  const origin = request.headers.get('Origin') || '';
-  const allowed = [
-    ...(env.CORS_PROD_DOMAINS || '').split(',').map(s => s.trim()).filter(Boolean),
-    ...(env.CORS_DEV_DOMAINS || '').split(',').map(s => s.trim()).filter(Boolean),
-  ];
-
-  const allowOrigin = allowed.some(d => {
-    if (d.includes('*')) {
-      const re = new RegExp('^' + d.replace(/\./g, '\\.').replace(/\*/g, '.*') + '$');
-      return re.test(origin);
-    }
-    return origin === d || origin.startsWith(d);
-  }) ? origin : '*';
-
-  const headers = new Headers({
-    'Access-Control-Allow-Origin': allowOrigin,
-    'Access-Control-Allow-Methods': ALLOWED_METHODS,
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Request-ID',
-    'Access-Control-Max-Age': '86400',
-    'Vary': 'Origin',
-  });
-
-  return headers;
-}
-
-function addRequestId(headers: Headers): string {
-  const existing = headers.get('X-Request-ID') || headers.get('cf-ray');
-  const id = existing || crypto.randomUUID();
-  headers.set('X-Request-ID', id);
-  return id;
-}
-
-async function proxyToAARON(request: Request, env: Env, requestId: string): Promise<Response> {
-  const url = new URL(request.url);
-  const originUrl = new URL(env.AARON_ORIGIN);
-  
-  // Build the target URL (preserve path + query)
-  const target = new URL(url.pathname + url.search, originUrl);
-
-  // Clone headers, add tracing info
-  const headers = new Headers(request.headers);
-  headers.set('X-Request-ID', requestId);
-  headers.set('X-Forwarded-Host', url.host);
-  headers.set('X-Forwarded-Proto', url.protocol.replace(':', ''));
-
-  // Important: do not forward host that would cause issues
-  headers.delete('host');
-
-  const init: RequestInit = {
-    method: request.method,
-    headers,
-    body: request.body,
-    redirect: 'manual',
-  };
-
-  // Pass through CF context for streaming etc.
-  const res = await fetch(target.toString(), init);
-
-  // Copy response headers + add our cors + request id
-  const responseHeaders = new Headers(res.headers);
-  const cors = getCorsHeaders(request, env);
-  cors.forEach((v, k) => responseHeaders.set(k, v));
-  responseHeaders.set('X-Request-ID', requestId);
-  responseHeaders.set('X-AARON-Gateway', 'cloudflare-worker');
-
-  // Return the response (including streaming bodies)
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: responseHeaders,
-  });
-}
+import type { GatewayEnv } from "./lib/cors";
+import { getCorsHeaders, addRequestId, jsonResponse } from "./lib/cors";
+import { validateJoeToken } from "./lib/auth-gate";
+import { isAaronPath, proxyToAaron } from "./aaron-gateway";
+import { isHedgehogPath, handleHedgehog } from "./hedgehog-mcp";
 
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    const requestId = addRequestId(new Headers()); // will be attached below
+    const requestId = addRequestId(new Headers());
 
-    // CORS preflight
-    if (request.method === 'OPTIONS') {
+    if (request.method === "OPTIONS") {
       const cors = getCorsHeaders(request, env);
-      cors.set('X-Request-ID', requestId);
+      cors.set("X-Request-ID", requestId);
       return new Response(null, { status: 204, headers: cors });
     }
 
     try {
-      // Only proxy known AARON paths (defensive). Everything else 404 for now.
-      const aaronPaths = ['/session', '/verify', '/gaze', '/mint'];
-      const isAARONPath = aaronPaths.some(p => url.pathname === p || url.pathname.startsWith(p + '/'));
-
-      if (!isAARONPath) {
-        const cors = getCorsHeaders(request, env);
-        cors.set('X-Request-ID', requestId);
-        return new Response(JSON.stringify({ error: 'Not found', requestId }), {
-          status: 404,
-          headers: { ...Object.fromEntries(cors), 'Content-Type': 'application/json' },
-        });
+      // HEDGEHOG MCP + health
+      if (isHedgehogPath(url.pathname)) {
+        const auth = validateJoeToken(request, url.pathname);
+        if (!auth.ok) {
+          const cors = getCorsHeaders(request, env);
+          return jsonResponse({ error: auth.error, requestId }, 401, cors, requestId);
+        }
+        return handleHedgehog(request, env, requestId);
       }
 
-      const response = await proxyToAARON(request, env, requestId);
-
-      // Optional: log to tail / Analytics Engine in future
-      // ctx.waitUntil( logRequest(...) );
-
-      return response;
-    } catch (err: any) {
-      console.error('AARON gateway error', { requestId, error: err?.message || err });
+      // AARON attestation / gaze / handshake
+      if (isAaronPath(url.pathname)) {
+        return proxyToAaron(request, env, requestId);
+      }
 
       const cors = getCorsHeaders(request, env);
-      cors.set('X-Request-ID', requestId);
-
-      return new Response(JSON.stringify({
-        error: 'Gateway error',
+      return jsonResponse(
+        {
+          error: "Not found",
+          gateway: "jettoptx-aaron-hedgehog",
+          hint: "Use /mcp, /health, /session, /verify, /gaze",
+          requestId,
+        },
+        404,
+        cors,
         requestId,
-        message: env.ENV === 'production' ? undefined : String(err?.message || err),
-      }), {
-        status: 502,
-        headers: { ...Object.fromEntries(cors), 'Content-Type': 'application/json' },
-      });
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("Gateway error", { requestId, error: message });
+      const cors = getCorsHeaders(request, env);
+      return jsonResponse(
+        {
+          error: "Gateway error",
+          requestId,
+          message: env.ENV === "production" ? undefined : message,
+        },
+        502,
+        cors,
+        requestId,
+      );
     }
   },
 };
+
+export type { GatewayEnv };
