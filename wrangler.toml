@@ -19,12 +19,12 @@ cpu_ms = 300_000
 
 # AARON attestation + gaze gateway
 [[routes]]
-pattern = "aaron.jettoptics.ai/*"
+pattern = "aaron.jettoptics.ai"
 zone_name = "jettoptics.ai"
 custom_domain = true
 
 # HEDGEHOG MCP + Grok proxy (gated — JOE API tokens)
 [[routes]]
-pattern = "mcp.jettoptics.ai/*"
+pattern = "mcp.jettoptics.ai"
 zone_name = "jettoptics.ai"
 custom_domain = true
