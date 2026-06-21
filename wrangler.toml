@@ -17,9 +17,8 @@ CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jet
 [limits]
 cpu_ms = 300_000
 
-# HEDGEHOG MCP — attach mcp.jettoptics.ai only for Phase 0 deploy.
-# aaron.jettoptics.ai stays on existing Jetson/tunnel (aaron-router) until cutover.
+# Phase 0: zone route (not custom_domain) — attach mcp.jettoptics.ai via Workers route.
+# If deploy still fails, remove this block and add domain in dashboard → Worker → Domains.
 [[routes]]
-pattern = "mcp.jettoptics.ai"
+pattern = "mcp.jettoptics.ai/*"
 zone_name = "jettoptics.ai"
-custom_domain = true
