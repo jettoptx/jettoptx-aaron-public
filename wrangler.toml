@@ -1,4 +1,4 @@
-name = "jettoptx-aaron-hedgehog"
+name = "jettoptx-aaron-public"
 main = "src/index.ts"
 workers_dev = false
 compatibility_date = "2026-06-11"
@@ -17,13 +17,8 @@ CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jet
 [limits]
 cpu_ms = 300_000
 
-# AARON attestation + gaze gateway
-[[routes]]
-pattern = "aaron.jettoptics.ai"
-zone_name = "jettoptics.ai"
-custom_domain = true
-
-# HEDGEHOG MCP + Grok proxy (gated — JOE API tokens)
+# HEDGEHOG MCP — attach mcp.jettoptics.ai only for Phase 0 deploy.
+# aaron.jettoptics.ai stays on existing Jetson/tunnel (aaron-router) until cutover.
 [[routes]]
 pattern = "mcp.jettoptics.ai"
 zone_name = "jettoptics.ai"
