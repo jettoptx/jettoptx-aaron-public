@@ -1,8 +1,10 @@
+# Optional manual deploy via GitHub Actions.
+# Production deploys use Cloudflare Workers Builds (dashboard Git integration).
+# Push-trigger disabled to avoid failed runs when CLOUDFLARE_* secrets are unset.
+
 name: Deploy jettoptx-aaron-hedgehog
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
