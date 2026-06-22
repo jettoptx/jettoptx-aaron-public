@@ -26,7 +26,7 @@ export default {
     try {
       // HEDGEHOG MCP + health
       if (isHedgehogPath(url.pathname)) {
-        const auth = validateJoeToken(request, url.pathname);
+        const auth = await validateJoeToken(request, url.pathname, env);
         if (!auth.ok) {
           const cors = getCorsHeaders(request, env);
           return jsonResponse({ error: auth.error, requestId }, 401, cors, requestId);

@@ -8,6 +8,12 @@ export interface GatewayEnv {
   ENV: string;
   CORS_PROD_DOMAINS?: string;
   CORS_DEV_DOMAINS?: string;
+  /** SpacetimeDB HTTP SQL endpoint — e.g. https://stdb.jettoptics.ai/v1/database/jettchat */
+  SPACETIME_HTTP_URL?: string;
+  /** Admin MCP API key (set as Worker secret in dashboard) */
+  MCP_API_KEY?: string;
+  /** Helius mainnet RPC for WEALTH8 JTX / NFT checks */
+  HELIUS_MAINNET_RPC?: string;
 }
 
 const ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";
