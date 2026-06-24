@@ -34,10 +34,10 @@ const SHIELD4_AUTHORIZED_X_ACCOUNTS: Record<string, Shield4Account> = {
   },
 };
 
-const JTX_MINT = "9XpJiKEYzq5yDo5pJzRfjSRMPL2yPfDQXgiN7uYtBhUj";
+const JTX_MINT = "JTXGnx83s2QZ2MwYkRD1cBKrqQKSdG5oe8vSYW5Zjoe";
 const SPACE_COWBOYS_COLLECTION = "FFPeaPRugCzoATDhXG7ZaGk4woTBGsmHBugdpPcgi4EY";
 const DEFAULT_HELIUS_RPC =
-  "https://mainnet.helius-rpc.com/?api-key=98ca6456-20a8-4518-8393-1b9ee6c2b7f3";
+  process.env.HELIUS_MAINNET_RPC ?? "https://api.mainnet-beta.solana.com";
 
 const TIER_THRESHOLDS: { min: number; tier: BillingTier }[] = [
   { min: 1111, tier: "spaceCowboy" },
