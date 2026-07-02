@@ -1,6 +1,7 @@
 /**
- * JOE-issued API token gate (Phase 1) — ported from jettoptx-jettchat-app/lib/mcp-auth.ts.
+ * JOE-issued API token gate — ported from jettoptx-jettchat-app/lib/mcp-auth.ts.
  * Validates static MCP key, SpacetimeDB jtx_api_key rows, and SHIELD4 X OAuth + WEALTH8 billing.
+ * Last synced: 2026-07-02.
  */
 
 import type { GatewayEnv } from "./cors";
@@ -461,6 +462,6 @@ export async function validateJoeToken(
   return {
     ok: false,
     error:
-      "Unauthorized — JOE API token required. Provide Bearer token (MCP API key, SpacetimeDB key, or X OAuth). Issue keys at jettoptx.chat/support.",
+      "Unauthorized — JOE API token required. Provide Bearer token (MCP API key, SpacetimeDB key, or X OAuth). Issue keys at jettoptx.chat/settings.",
   };
 }
