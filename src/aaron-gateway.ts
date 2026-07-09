@@ -5,10 +5,22 @@
 import type { GatewayEnv } from "./lib/cors";
 import { getCorsHeaders } from "./lib/cors";
 
-const AARON_PATHS = ["/session", "/verify", "/gaze", "/mint", "/handshake"];
+const AARON_PATHS = [
+  "/session",
+  "/verify",
+  "/gaze",
+  "/mint",
+  "/handshake",
+  // Payable JOE / x402 surface (USDC → jtxfaucet.sol)
+  "/x402",
+  "/orphan",
+  "/.well-known/agent-card.json",
+];
 
 export function isAaronPath(pathname: string): boolean {
-  return AARON_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  return AARON_PATHS.some(
+    (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
 }
 
 export async function proxyToAaron(

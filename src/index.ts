@@ -2,8 +2,11 @@
  * jettoptx-aaron-hedgehog — Gated edge gateway for AARON + HEDGEHOG MCP
  *
  * JOE-issued API tokens required for MCP (issue at jettoptx.chat/support).
- * AARON paths: attestation, gaze verify, handshake (not Grok mint path).
+ * AARON paths: attestation, gaze verify, handshake, x402 payable JOE APIs.
  * HEDGEHOG paths: MCP tools, Grok proxy to Jetson :8811.
+ *
+ * x402 / orphan routes are proxied ungated — payment is enforced on the
+ * Jetson AARON router (USDC → jtxfaucet.sol).
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -44,7 +47,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /health, /session, /verify, /gaze",
+          hint: "Use /mcp, /health, /session, /verify, /gaze, /x402, /orphan/402",
           requestId,
         },
         404,
