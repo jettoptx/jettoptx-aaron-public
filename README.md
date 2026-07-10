@@ -62,3 +62,16 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for SpacetimeDB vs Helix division, Nous
 ## Signed by JOE
 
 Jett Optics Engine — integrating into Cursor, Grok, and Hermes.
+
+## Payable JOE (x402)
+
+Proxies `/x402` and `/orphan/*` ungated to `AARON_ORIGIN` (Jetson). Settlement is enforced on AARON (USDC → `jtxfaucet.sol`). Money path is **not** on Vercel.
+
+## Deploy
+
+```bash
+npx wrangler login   # once
+npx wrangler deploy
+```
+
+Requires Cloudflare auth. Routes: `mcp.jettoptics.ai/*`. Origin `AARON_ORIGIN=https://aaron.jettoptics.ai` already proxies x402; cloudflared also tunnels `aaron.jettoptics.ai` for v1.
