@@ -1,45 +1,48 @@
-# jettoptx-aaron-hedgehog
+# jettoptx-aaron-public
 
-Gated **Cloudflare edge gateway** for the Jett Optics platform — **AARON** attestation + **HEDGEHOG** MCP.
+**Public Cloudflare edge gateway** for Jett Optics — fronts **AARON** (attestation API) and **HEDGEHOG MCP** without exposing the Jetson mesh.
 
-> Formerly `jettoptx-aaron-public`. Rename reflects unified AARON + HEDGEHOG edge plane.
+> Package name in `package.json`: `jettoptx-aaron-hedgehog` (AARON + HEDGEHOG edge plane).  
+> **Backend / full router source** (private ops): [jettoptx-aaron-router](https://github.com/jettoptx/jettoptx-aaron-router)  
+> **Docs:** [Edge Gateway](https://jettoptx.dev/docs/infrastructure/edge-gateway) · [Protocol](https://jettoptx.dev/docs/protocol)
 
-## Purpose
+## What this is (and is not)
 
-- **AARON** (`aaron.jettoptics.ai`) — gaze verify, session, handshake, on-chain attestation bridge
-- **HEDGEHOG MCP** (`mcp.jettoptics.ai`) — JOE Agentic OS tools, Grok proxy to Jetson `:8811`
-- **Gated** — developers need **JOE-issued API tokens** (DOJO subscription via Privy dashboard at jettoptx.chat/support)
+| This repo | Not this repo |
+|-----------|----------------|
+| Cloudflare Worker (edge proxy + MCP gate) | Full FastAPI AARON on Jetson (`aaron_router.py`) |
+| Public-safe source for integrators | Secrets, Tailscale, or mesh credentials |
+| CORS, request IDs, path routing | On-chain program bytecode ([jettoptx-poa-depin](https://github.com/jettoptx/jettoptx-poa-depin)) |
+
+## Hosts
+
+| Host | Role |
+|------|------|
+| `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
+| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health |
+
+## Auth
+
+| Phase | Behavior |
+|-------|----------|
+| **0** | Bearer / `X-JOE-Token` present → allow MCP |
+| **1** | Validate token against SpacetimeDB + subscription tier |
+
+Issue developer tokens via DOJO / support at [jettoptx.chat](https://jettoptx.chat).  
+x402 / payment routes are enforced on the **origin AARON** backend (USDC settlement), not by inventing keys in this Worker.
 
 ## Quick start
 
 ```bash
+git clone https://github.com/jettoptx/jettoptx-aaron-public.git
+cd jettoptx-aaron-public
 npm install
+cp .env.example .dev.vars   # optional local secrets
 npx wrangler login
 npm run dev
-# MCP health: GET http://localhost:8787/health
-# MCP tools:   POST http://localhost:8787/mcp  Authorization: Bearer <token>
+# GET  http://localhost:8787/health
+# POST http://localhost:8787/mcp  Authorization: Bearer <token>
 ```
-
-## Auth (Phase 0 → 1)
-
-| Phase | Behavior |
-|-------|----------|
-| **0 (now)** | Bearer token or `X-JOE-Token` header present → allow |
-| **1** | Validate token against SpacetimeDB + WEALTH8 tier via Privy dashboard |
-
-## MCP tools (Phase 0)
-
-- `hedgehog_health` — gateway health
-- `jett_augment_status` — JETT Augments 00–09 with V/S/W hotkeys
-
-Canonical registry: `@jettoptx/jett-augment-registry` in jettoptx-sdk.
-
-## Routes
-
-| Host | Paths |
-|------|-------|
-| `aaron.jettoptics.ai` | `/session`, `/verify`, `/gaze`, `/mint`, `/handshake/*` |
-| `mcp.jettoptics.ai` | `/mcp`, `/health`, `/grok/*`, `/.well-known/joe-gateway` |
 
 ## Deploy
 
@@ -47,18 +50,39 @@ Canonical registry: `@jettoptx/jett-augment-registry` in jettoptx-sdk.
 npm run deploy
 ```
 
-Secrets (Phase 1):
+Secrets (dashboard or CLI — **never commit**):
 
 ```bash
-npx wrangler secret put CF_ACCESS_CLIENT_ID
-npx wrangler secret put CF_ACCESS_CLIENT_SECRET
-npx wrangler secret put XAI_API_KEY
+npx wrangler secret put MCP_API_KEY
+npx wrangler secret put HELIUS_MAINNET_RPC   # optional
+# Phase 1 / optional:
+# npx wrangler secret put CF_ACCESS_CLIENT_ID
+# npx wrangler secret put CF_ACCESS_CLIENT_SECRET
+# npx wrangler secret put XAI_API_KEY
 ```
 
 ## Architecture
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for SpacetimeDB vs Helix division, NousVis synergy, and client stack.
+See [ARCHITECTURE.md](./ARCHITECTURE.md). High level:
 
-## Signed by JOE
+```text
+Client  →  Cloudflare Worker (this repo)
+              ├─ /mcp, /health     → HEDGEHOG MCP handlers
+              └─ /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel)
+```
 
-Jett Optics Engine — integrating into Cursor, Grok, and Hermes.
+On-chain programs and upgrade authority: [poa-depin README](https://github.com/jettoptx/jettoptx-poa-depin) · [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses).
+
+## Related repos
+
+| Repo | Visibility (intent) | Role |
+|------|---------------------|------|
+| [jettoptx-docs](https://github.com/jettoptx/jettoptx-docs) | Public | Developer docs site |
+| [jettoptx-poa-depin](https://github.com/jettoptx/jettoptx-poa-depin) | Public (programs) | Solana PoA Trust + Vault |
+| [jettoptx-aaron-public](https://github.com/jettoptx/jettoptx-aaron-public) | Public (this) | Edge Worker |
+| [jettoptx-aaron-router](https://github.com/jettoptx/jettoptx-aaron-router) | Private | Full AARON backend + SDKs |
+| [jettoptx-xwealth](https://github.com/jettoptx/jettoptx-xwealth) | Public | X Money / JTX gate plugins |
+
+## License
+
+MIT (see repository license if present).

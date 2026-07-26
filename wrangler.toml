@@ -15,9 +15,10 @@ ENV = "production"
 CORS_DEV_DOMAINS = ""
 CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jettoptx.chat,https://www.jettoptx.chat,https://jettoptx.vercel.app,capacitor://localhost,http://localhost:*"
 
-# Secrets (set in Cloudflare dashboard → Worker → Settings → Variables):
-#   MCP_API_KEY          — static admin MCP key (matches Vercel MCP_API_KEY)
-#   HELIUS_MAINNET_RPC   — optional; defaults to bundled Helius endpoint
+# Secrets (dashboard → Worker → Settings → Secrets — never commit values):
+#   MCP_API_KEY          — static admin MCP key
+#   HELIUS_MAINNET_RPC   — optional paid RPC; code falls back to public mainnet-beta
+#   XAI_API_KEY          — optional; prefer keeping model keys on origin AARON
 
 [limits]
 cpu_ms = 300_000

@@ -1,8 +1,8 @@
 {
   "name": "jettoptx-aaron-hedgehog",
   "version": "0.2.0",
-  "private": true,
-  "description": "Gated Cloudflare edge gateway — AARON attestation + HEDGEHOG MCP (JOE API tokens)",
+  "private": false,
+  "description": "Public Cloudflare edge gateway — AARON attestation proxy + HEDGEHOG MCP (JOE API tokens)",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
