@@ -1,63 +1,50 @@
-# jettoptx-aaron-hedgehog Architecture
+# jettoptx-aaron-public Architecture
+
+Public **Cloudflare edge gateway** for AARON attestation routes and HEDGEHOG MCP. Does not host mesh internals or private ops tooling.
 
 ## Edge gateway layer
 
 ```
-Clients (Cursor, SuperGrok, Hermes, jettoptx.chat)
+Clients (Cursor, Hermes, jettoptx.chat, agents)
         │
         ▼
-jettoptx-aaron-hedgehog (Cloudflare Worker)
-  ├── JOE API token gate
-  ├── AARON → aaron.jettoptics.ai (Jetson :8888)
-  └── HEDGEHOG → hedgehog.jettoptics.ai (Jetson :8811)
+jettoptx-aaron-public (Cloudflare Worker)
+  ├── JOE API token gate (MCP paths)
+  ├── AARON proxy → aaron.jettoptics.ai
+  └── HEDGEHOG MCP → mcp.jettoptics.ai handlers / origin
 ```
 
 ## Data division of labor
 
-| Plane | Technology | Role | Client |
-|-------|------------|------|--------|
-| **Operational** | SpacetimeDB (Jetson) | Realtime reducers, JettChat, auth, billing, devlogs, handovers | jettoptx.chat, MOJO |
-| **Knowledge** (future) | Helix Cloud | MOA graph, vector RAG, saved layouts | DOJO MOA Builder, NousVis |
-| **On-chain** | Solana + Helius addon | Attestations, JTX/OPTX proofs only | jettoptx-jtx-trade |
-| **Compute** (future) | $SGL x402 | Agent VM containers for MOJO/DOJO | Vector augment (09) |
+| Plane | Technology | Role | Clients |
+|-------|------------|------|---------|
+| **Operational** | SpacetimeDB (edge) | Realtime state, auth, billing hooks | jettoptx.chat, MOJO |
+| **Knowledge** (future) | Graph / vector store | MOA graph, RAG layouts | DOJO builder surfaces |
+| **On-chain** | Solana | Attestations, JTX/OPTX proofs | jettoptx-jtx-trade, poa-depin |
+| **Compute** (future) | x402 metered jobs | Agent workloads | Product tiers |
 
-**Why both SpacetimeDB and Helix:** SpacetimeDB excels at gaming-speed reducers and subscriptions (JettChat). Helix excels at property graphs + vector + BM25 (MOA knowledge nodes). Sovereign chat stays on Jetson; Helix Cloud handles knowledge when you pay for full platform capability.
-
-## NousVis synergy
-
-[jettoptx-nousvis](https://github.com/jettoptx/jettoptx-nousvis) visualizes **SpacetimeDB operational state** today (chat rows, JTX users, agent tasks).
-
-When Helix is adopted:
-
-| Source | NousVis dashboard |
-|--------|-------------------|
-| SpacetimeDB | Realtime chat, online roster, billing events |
-| Helix Cloud | MOA graph explorer, augment node heatmaps, semantic search analytics |
-| Solana | JTX/OPTX/SGL on-chain stats |
-
-Add `helix` to NousVis `db_type` selector — same plugin pattern as SpacetimeDB sync.
-
-## Matrix rooms
-
-| Room | Audience |
-|------|----------|
-| `#JTX:jettoptics.ai` | Public users + their agents |
-| `#optx:jettoptics.ai` | Dev/admin broadcast rail → JOE agents only |
+**SpacetimeDB** remains the operational realtime plane. Knowledge-graph backends are optional future capacity — not required to use this gateway.
 
 ## Client stack (current)
 
-- **Auth:** xAI Developer OAuth + Privy (X / email / Solana wallet)
-- **App:** jettoptx.chat (DOJO) on Vercel
-- **Edge:** Cloudflare Workers + tunnels
-- **CI/CD:** GitHub
-- **No Convex, Clerk, or Zitadel**
+- **Auth:** product OAuth / wallet gates as configured on origin services  
+- **App:** jettoptx.chat (DOJO) on Vercel  
+- **Edge:** Cloudflare Workers + tunnels to private origin  
+- **CI/CD:** GitHub  
+- **Programs:** [jettoptx-poa-depin](https://github.com/jettoptx/jettoptx-poa-depin) (Apache-2.0)
 
-## Future unified plugins
+## Related private surfaces
 
-Planned jettoptx plugins for: Cursor, NousVis, Helix Cloud, Cloudflare, GitHub, Vercel.
+Full AARON backend (FastAPI on Jetson), mesh credentials, and operator comms are **out of scope** for this public repo. See [jettoptx-aaron-router](https://github.com/jettoptx/jettoptx-aaron-router) (private) for origin implementation.
 
 ## Mobile-first roadmap
 
-1. jtx.chat working on iOS/Android builds
-2. Import augment registry + Helix MOA graph to web DOJO
-3. Edge MCP Phase 1 (full SSE + xAI OAuth + SpacetimeDB token validation)
+1. jtx.chat / MOJO working on iOS/Android builds  
+2. DOJO web + edge MCP Phase 1 (SSE, stronger token validation)  
+3. On-chain attestation paths aligned with public poa-depin docs  
+
+## Security notes
+
+- No secrets in this repository — Worker secrets via Cloudflare dashboard  
+- Report vulnerabilities: **joe@jettoptics.ai** (see [SECURITY.md](./SECURITY.md))  
+- On-chain upgrade authority: Squads vault `9Wss…` — see [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses)
