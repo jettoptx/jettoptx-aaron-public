@@ -27,7 +27,7 @@ interface Shield4Account {
 
 const SHIELD4_AUTHORIZED_X_ACCOUNTS: Record<string, Shield4Account> = {
   jettoptx: {
-    twinId: "josh",
+    twinId: "jettoptx",
     wallet: "FEUwuvXbbSYTCEhhqgAt2viTsEnromNNDsapoFvyfy3H",
     email: "joe@jettoptics.ai",
     founderBypass: true,
