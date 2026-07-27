@@ -29,7 +29,7 @@ const SHIELD4_AUTHORIZED_X_ACCOUNTS: Record<string, Shield4Account> = {
   jettoptx: {
     twinId: "josh",
     wallet: "FEUwuvXbbSYTCEhhqgAt2viTsEnromNNDsapoFvyfy3H",
-    email: "jett.optics.astro.knots@gmail.com",
+    email: "joe@jettoptics.ai",
     founderBypass: true,
   },
 };
