@@ -39,6 +39,40 @@ SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL a
 
 Issue developer tokens via DOJO / support at [jettoptx.chat](https://jettoptx.chat).
 
+## MCP tools (HEDGEHOG / search06)
+
+All `/mcp` `tools/call` requests require a JOE token (except public `/health`).
+
+| Tool | Augment | Purpose |
+|------|---------|---------|
+| `hedgehog_health` | 00 Core | Edge gateway liveness |
+| `jett_augment_status` | 00 / 06 | List augments 00–09 (`status: "registered"`) |
+| `jett_docs_search` | **06 Search** | Query [docs.jettoptx.dev](https://docs.jettoptx.dev) Fumadocs `/api/search`; static index fallback |
+| `jett_augment_lookup` | **06 Search** | Look up one augment by digit/name (role, HEAT, AGT) |
+| `jett_edge_diagnose` | **06 Search** | Configured hosts, tool list, optional origin/docs probes (no secrets) |
+
+Example (after auth):
+
+```bash
+# Docs search
+curl -sS https://mcp.jettoptics.ai/mcp \
+  -H "Authorization: Bearer $JOE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"jett_docs_search","arguments":{"query":"edge gateway","limit":5}}}'
+
+# Augment lookup
+curl -sS https://mcp.jettoptics.ai/mcp \
+  -H "Authorization: Bearer $JOE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"jett_augment_lookup","arguments":{"digit":"06"}}}'
+
+# Edge diagnose (set probe:false to skip outbound HEADs)
+curl -sS https://mcp.jettoptics.ai/mcp \
+  -H "Authorization: Bearer $JOE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"jett_edge_diagnose","arguments":{"probe":true}}}'
+```
+
 ## Quick start
 
 ```bash
