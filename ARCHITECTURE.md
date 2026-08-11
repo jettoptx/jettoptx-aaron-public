@@ -46,5 +46,8 @@ Full AARON backend (FastAPI on Jetson), mesh credentials, and operator comms are
 ## Security notes
 
 - No secrets in this repository — Worker secrets via Cloudflare dashboard  
+- MCP auth accepts `Authorization: Bearer` and `X-JOE-Token` only (no query-string keys)  
+- AARON proxy paths (including `/x402`) remain ungated at the edge; origin enforces payment/auth  
+- SHIELD4 founder allowlist is intentional public config in `auth-gate.ts` (small surface)  
 - Report vulnerabilities: **joe@jettoptics.ai** (see [SECURITY.md](./SECURITY.md))  
 - On-chain upgrade authority: Squads vault `9Wss…` — see [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses)

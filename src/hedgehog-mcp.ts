@@ -1,6 +1,7 @@
 /**
- * HEDGEHOG MCP edge handler (Phase 0).
- * Phase 1: full SSE transport + proxy to Jetson :8811 via CF Access.
+ * HEDGEHOG MCP edge handler.
+ * Includes search06 discovery/diagnostics tools (docs search, augment lookup, edge diagnose).
+ * SSE streaming + Jetson :8811 proxy remain future work.
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -46,9 +47,10 @@ export async function handleHedgehog(
         name: "JOE — Jett Optics Engine",
         gateway: "jettoptx-aaron-hedgehog",
         mcpEndpoint: "/mcp",
-        auth: "JOE API token (Bearer) — issue at jettoptx.chat/support",
+        auth: "JOE API token via Authorization: Bearer or X-JOE-Token — issue at jettoptx.chat/support",
         augments: "00–09 JETT Augments",
-        docs: "https://jettoptx.dev/docs",
+        search06Tools: ["jett_docs_search", "jett_augment_lookup", "jett_edge_diagnose"],
+        docs: "https://docs.jettoptx.dev",
       },
       200,
       cors,
@@ -97,7 +99,7 @@ export async function handleHedgehog(
       const toolName = params?.name as string;
       const toolArgs = (params?.arguments ?? {}) as Record<string, unknown>;
       try {
-        const result = executeMcpTool(toolName, toolArgs);
+        const result = await executeMcpTool(toolName, toolArgs, env);
         return jsonResponse(
           {
             jsonrpc: "2.0",
