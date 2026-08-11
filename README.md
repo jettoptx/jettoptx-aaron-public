@@ -1,10 +1,10 @@
 # jettoptx-aaron-public
 
-**Public Cloudflare edge gateway** for Jett Optics â€” fronts **AARON** (attestation API) and **HEDGEHOG MCP** without exposing the Jetson mesh.
+**Public Cloudflare edge gateway** for Jett Optics — fronts **AARON** (attestation API) and **HEDGEHOG MCP** without exposing the Jetson mesh.
 
 > Package name in `package.json`: `jettoptx-aaron-hedgehog` (AARON + HEDGEHOG edge plane).  
 > **Backend / full router source** (private ops): [jettoptx-aaron-router](https://github.com/jettoptx/jettoptx-aaron-router)  
-> **Docs:** [Edge Gateway](https://jettoptx.dev/docs/infrastructure/edge-gateway) Â· [Protocol](https://jettoptx.dev/docs/protocol)
+> **Docs:** [Edge Gateway](https://jettoptx.dev/docs/infrastructure/edge-gateway) · [Protocol](https://jettoptx.dev/docs/protocol)
 
 ## What this is (and is not)
 
@@ -18,18 +18,60 @@
 
 | Host | Role |
 |------|------|
-| `aaron.jettoptics.ai` | AARON REST â€” session, verify, gaze, handshake, x402 proxy |
+| `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
 | `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health |
 
 ## Auth
 
-| Phase | Behavior |
-|-------|----------|
-| **0** | Bearer / `X-JOE-Token` present â†’ allow MCP |
-| **1** | Validate token against SpacetimeDB + subscription tier |
+MCP paths (`/mcp`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health` and `/.well-known/joe-gateway`.
 
-Issue developer tokens via DOJO / support at [jettoptx.chat](https://jettoptx.chat).  
-x402 / payment routes are enforced on the **origin AARON** backend (USDC settlement), not by inventing keys in this Worker.
+| Credential | How to send | Behavior |
+|------------|-------------|----------|
+| Static admin key (`MCP_API_KEY` Worker secret) | `Authorization: Bearer` or `X-JOE-Token` | Accept (spaceCowboy tier) |
+| SpacetimeDB `jtx_api_key` | `Authorization: Bearer` or `X-JOE-Token` | Hash lookup via SpacetimeDB HTTP SQL |
+| X OAuth access token | `Authorization: Bearer` only | Map username → SHIELD4 allowlist + billing gate |
+
+**Do not** put API keys in the query string (`?key=`). Query credentials leak via access logs, proxies, and `Referer`.
+
+AARON routes (`/session`, `/verify`, `/gaze`, `/x402`, `/orphan`, …) are **proxied ungated** by this Worker — payment and origin auth remain on the Jetson AARON router (USDC settlement). Gating them here is out of scope unless added deliberately later.
+
+SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
+
+Issue developer tokens via DOJO / support at [jettoptx.chat](https://jettoptx.chat).
+
+## MCP tools (HEDGEHOG / search06)
+
+All `/mcp` `tools/call` requests require a JOE token (except public `/health`).
+
+| Tool | Augment | Purpose |
+|------|---------|---------|
+| `hedgehog_health` | 00 Core | Edge gateway liveness |
+| `jett_augment_status` | 00 / 06 | List augments 00–09 (`status: "registered"`) |
+| `jett_docs_search` | **06 Search** | `GET docs.jettoptx.dev/api/search?query=` (Fumadocs; not `?q=`); absolute `docs.jettoptx.dev` links; static index fallback |
+| `jett_augment_lookup` | **06 Search** | Look up one augment by digit/name (role, HEAT, AGT) |
+| `jett_edge_diagnose` | **06 Search** | Configured hosts, tool list, optional origin/docs probes (no secrets) |
+
+Example (after auth):
+
+```bash
+# Docs search
+curl -sS https://mcp.jettoptics.ai/mcp \
+  -H "Authorization: Bearer $JOE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"jett_docs_search","arguments":{"query":"edge gateway","limit":5}}}'
+
+# Augment lookup
+curl -sS https://mcp.jettoptics.ai/mcp \
+  -H "Authorization: Bearer $JOE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"jett_augment_lookup","arguments":{"digit":"06"}}}'
+
+# Edge diagnose (set probe:false to skip outbound HEADs)
+curl -sS https://mcp.jettoptics.ai/mcp \
+  -H "Authorization: Bearer $JOE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"jett_edge_diagnose","arguments":{"probe":true}}}'
+```
 
 ## Quick start
 
@@ -50,12 +92,12 @@ npm run dev
 npm run deploy
 ```
 
-Secrets (dashboard or CLI â€” **never commit**):
+Secrets (dashboard or CLI — **never commit**):
 
 ```bash
 npx wrangler secret put MCP_API_KEY
 npx wrangler secret put HELIUS_MAINNET_RPC   # optional
-# Phase 1 / optional:
+# Optional:
 # npx wrangler secret put CF_ACCESS_CLIENT_ID
 # npx wrangler secret put CF_ACCESS_CLIENT_SECRET
 # npx wrangler secret put XAI_API_KEY
@@ -66,12 +108,12 @@ npx wrangler secret put HELIUS_MAINNET_RPC   # optional
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for edge planes, client stack, and security notes.
 
 ```text
-Client  â†’  Cloudflare Worker (this repo)
-              â”œâ”€ /mcp, /health     â†’ HEDGEHOG MCP handlers
-              â””â”€ /session,/verifyâ€¦ â†’ proxy â†’ aaron.jettoptics.ai (Jetson tunnel)
+Client  →  Cloudflare Worker (this repo)
+              ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
+              └── /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
 ```
 
-On-chain programs and upgrade authority: [poa-depin README](https://github.com/jettoptx/jettoptx-poa-depin) Â· [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses).
+On-chain programs and upgrade authority: [poa-depin README](https://github.com/jettoptx/jettoptx-poa-depin) · [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses).
 
 ## Related repos
 

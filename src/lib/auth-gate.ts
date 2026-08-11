@@ -1,6 +1,13 @@
 /**
- * JOE-issued API token gate (Phase 1) — ported from jettoptx-jettchat-app/lib/mcp-auth.ts.
- * Validates static MCP key, SpacetimeDB jtx_api_key rows, and SHIELD4 X OAuth + WEALTH8 billing.
+ * JOE-issued API token gate — validates MCP credentials before HEDGEHOG handlers run.
+ *
+ * Accepted credentials (headers only — never query-string `?key=`):
+ *   - Authorization: Bearer <MCP_API_KEY | SpacetimeDB key | X OAuth access token>
+ *   - X-JOE-Token: <MCP_API_KEY | SpacetimeDB key>
+ *
+ * SpacetimeDB HTTP `/sql` accepts a raw SQL body with no parameter binding.
+ * Values that reach SQL are therefore strictly whitelisted before interpolation
+ * (see `isSafeTwinId` / `isSha256Hex`). Quote-escaping alone is not relied upon.
  */
 
 import type { GatewayEnv } from "./cors";
@@ -25,6 +32,7 @@ interface Shield4Account {
   founderBypass?: boolean;
 }
 
+/** Public founder allowlist (X username → twin / wallet). Not a secret; keep surface small. */
 const SHIELD4_AUTHORIZED_X_ACCOUNTS: Record<string, Shield4Account> = {
   jettoptx: {
     twinId: "jettoptx",
@@ -34,10 +42,23 @@ const SHIELD4_AUTHORIZED_X_ACCOUNTS: Record<string, Shield4Account> = {
   },
 };
 
+/** twinId / owner keys used in SQL: alphanumeric + underscore/hyphen, 1–64 chars. */
+const SAFE_TWIN_ID = /^[a-zA-Z0-9_-]{1,64}$/;
+/** SHA-256 digest as lowercase hex (64 chars) — output of `sha256()`. */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+function isSafeTwinId(value: string): boolean {
+  return SAFE_TWIN_ID.test(value);
+}
+
+function isSha256Hex(value: string): boolean {
+  return SHA256_HEX.test(value);
+}
+
 const JTX_MINT = "JTXGnx83s2QZ2MwYkRD1cBKrqQKSdG5oe8vSYW5Zjoe";
 const SPACE_COWBOYS_COLLECTION = "FFPeaPRugCzoATDhXG7ZaGk4woTBGsmHBugdpPcgi4EY";
-const DEFAULT_HELIUS_RPC =
-  process.env.HELIUS_MAINNET_RPC ?? "https://api.mainnet-beta.solana.com";
+/** Public fallback; prefer `env.HELIUS_MAINNET_RPC` Worker secret/var via `heliusRpc()`. */
+const DEFAULT_HELIUS_RPC = "https://api.mainnet-beta.solana.com";
 
 const TIER_THRESHOLDS: { min: number; tier: BillingTier }[] = [
   { min: 1111, tier: "spaceCowboy" },
@@ -173,9 +194,13 @@ async function checkStripeSubscription(
   twinId: string,
   spacetimeUrl: string,
 ): Promise<BillingTier> {
+  // SpacetimeDB HTTP SQL has no bind parameters — reject anything outside the twinId charset.
+  if (!isSafeTwinId(twinId)) return "none";
+
   try {
-    const ownerMatch = twinId.replace(/'/g, "''");
-    const sql = `SELECT * FROM memory_entry WHERE category = 'stripe_subscription' AND (owner = '${ownerMatch}' OR key = 'sub:${ownerMatch}')`;
+    const sql =
+      `SELECT * FROM memory_entry WHERE category = 'stripe_subscription' ` +
+      `AND (owner = '${twinId}' OR key = 'sub:${twinId}')`;
     const res = await fetch(`${spacetimeUrl.replace(/\/$/, "")}/sql`, {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
@@ -338,6 +363,9 @@ async function mapXUserToIdentity(xUser: XUserInfo, env: GatewayEnv): Promise<Au
 
 async function validateKeyAgainstDB(keyValue: string, spacetimeUrl: string): Promise<ApiKeyRow | null> {
   const hash = await sha256(keyValue);
+  // Defense in depth: only interpolate a well-formed SHA-256 hex digest (never raw key material).
+  if (!isSha256Hex(hash)) return null;
+
   const sql = `SELECT * FROM jtx_api_key WHERE key_hash = '${hash}' LIMIT 1`;
 
   try {
@@ -402,7 +430,6 @@ export async function validateJoeToken(
 
   const mcpApiKey = normalizeMcpApiKey(env.MCP_API_KEY);
   const spacetimeUrl = env.SPACETIME_HTTP_URL?.trim();
-  const url = new URL(request.url);
 
   const authHeader = request.headers.get("Authorization") ?? "";
   if (authHeader.startsWith("Bearer ")) {
@@ -442,18 +469,28 @@ export async function validateJoeToken(
     }
   }
 
+  // Header-only alternate credential path (no query-string keys — they leak via logs/Referer).
   const headerKey = request.headers.get("X-JOE-Token")?.trim();
-  const queryKey = url.searchParams.get("key")?.trim();
-  for (const key of [headerKey, queryKey]) {
-    if (!key) continue;
-    if (mcpApiKey && key === mcpApiKey) {
-      return { ok: true, identity: "api-key", method: "api-key", tier: "spaceCowboy", billingMethod: "api-key" };
+  if (headerKey) {
+    if (mcpApiKey && headerKey === mcpApiKey) {
+      return {
+        ok: true,
+        identity: "api-key",
+        method: "api-key",
+        tier: "spaceCowboy",
+        billingMethod: "api-key",
+      };
     }
     if (spacetimeUrl) {
-      const dbKey = await validateKeyAgainstDB(key, spacetimeUrl);
+      const dbKey = await validateKeyAgainstDB(headerKey, spacetimeUrl);
       if (dbKey) {
         touchKeyUsage(dbKey.id, spacetimeUrl);
-        return { ok: true, identity: `joe:${dbKey.twin_id}`, keyId: dbKey.id, method: "db-key" };
+        return {
+          ok: true,
+          identity: `joe:${dbKey.twin_id}`,
+          keyId: dbKey.id,
+          method: "db-key",
+        };
       }
     }
   }
@@ -461,6 +498,6 @@ export async function validateJoeToken(
   return {
     ok: false,
     error:
-      "Unauthorized — JOE API token required. Provide Bearer token (MCP API key, SpacetimeDB key, or X OAuth). Issue keys at jettoptx.chat/support.",
+      "Unauthorized — JOE API token required. Provide Authorization: Bearer or X-JOE-Token (MCP API key, SpacetimeDB key, or X OAuth Bearer). Issue keys at jettoptx.chat/support.",
   };
 }
