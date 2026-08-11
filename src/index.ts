@@ -5,8 +5,9 @@
  * AARON paths: attestation, gaze verify, handshake, x402 payable JOE APIs.
  * HEDGEHOG paths: MCP tools, Grok proxy to Jetson :8811.
  *
- * x402 / orphan routes are proxied ungated — payment is enforced on the
- * Jetson AARON router (USDC → jtxfaucet.sol).
+ * AARON paths (including /x402, /orphan) are proxied ungated — origin-enforced
+ * payment / auth on the Jetson AARON router (USDC → jtxfaucet.sol). Out of scope
+ * for the JOE MCP token gate unless explicitly added later.
  */
 
 import type { GatewayEnv } from "./lib/cors";

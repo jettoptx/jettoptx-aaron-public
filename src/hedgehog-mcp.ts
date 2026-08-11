@@ -46,7 +46,7 @@ export async function handleHedgehog(
         name: "JOE — Jett Optics Engine",
         gateway: "jettoptx-aaron-hedgehog",
         mcpEndpoint: "/mcp",
-        auth: "JOE API token (Bearer) — issue at jettoptx.chat/support",
+        auth: "JOE API token via Authorization: Bearer or X-JOE-Token — issue at jettoptx.chat/support",
         augments: "00–09 JETT Augments",
         docs: "https://jettoptx.dev/docs",
       },

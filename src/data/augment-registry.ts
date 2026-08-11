@@ -25,23 +25,7 @@ export const JETT_AUGMENTS: AugmentEntry[] = [
   { digit: "09", name: "Vector", heat: "V", agt: "ENV", role: "Swarm, SGL compute containers", dojoGated: true },
 ];
 
-export function augmentStatusPayload() {
-  return {
-    gateway: "jettoptx-aaron-hedgehog",
-    version: "0.2.0",
-    augments: JETT_AUGMENTS.map((a) => ({
-      id: parseInt(a.digit, 10),
-      ...a,
-      name: a.name.toUpperCase(),
-      status: "active",
-    })),
-    matrixRooms: {
-      public: "#JTX:jettoptics.ai",
-      adminRail: "#optx:jettoptics.ai",
-    },
-  };
-}
-
+/** MCP tools this edge Worker actually implements (not a full augment runtime). */
 export const MCP_TOOLS = [
   {
     name: "hedgehog_health",
@@ -54,6 +38,29 @@ export const MCP_TOOLS = [
     inputSchema: { type: "object", properties: {} },
   },
 ];
+
+/**
+ * Registry listing for MCP `jett_augment_status`.
+ * Status is `"registered"` (topology known to this edge), not a live health probe.
+ * This Worker only implements the tools in `MCP_TOOLS`.
+ */
+export function augmentStatusPayload() {
+  return {
+    gateway: "jettoptx-aaron-hedgehog",
+    version: "0.2.0",
+    augments: JETT_AUGMENTS.map((a) => ({
+      id: parseInt(a.digit, 10),
+      ...a,
+      name: a.name.toUpperCase(),
+      status: "registered" as const,
+    })),
+    edgeMcpTools: MCP_TOOLS.map((t) => t.name),
+    matrixRooms: {
+      public: "#JTX:jettoptics.ai",
+      adminRail: "#optx:jettoptics.ai",
+    },
+  };
+}
 
 export function executeMcpTool(name: string, _args: Record<string, unknown>): unknown {
   switch (name) {
