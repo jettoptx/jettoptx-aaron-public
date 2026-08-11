@@ -47,7 +47,7 @@ All `/mcp` `tools/call` requests require a JOE token (except public `/health`).
 |------|---------|---------|
 | `hedgehog_health` | 00 Core | Edge gateway liveness |
 | `jett_augment_status` | 00 / 06 | List augments 00–09 (`status: "registered"`) |
-| `jett_docs_search` | **06 Search** | Query [docs.jettoptx.dev](https://docs.jettoptx.dev) Fumadocs `/api/search`; static index fallback |
+| `jett_docs_search` | **06 Search** | `GET docs.jettoptx.dev/api/search?query=` (Fumadocs; not `?q=`); absolute `docs.jettoptx.dev` links; static index fallback |
 | `jett_augment_lookup` | **06 Search** | Look up one augment by digit/name (role, HEAT, AGT) |
 | `jett_edge_diagnose` | **06 Search** | Configured hosts, tool list, optional origin/docs probes (no secrets) |
 

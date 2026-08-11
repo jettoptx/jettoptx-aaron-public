@@ -29,11 +29,14 @@ export const MCP_TOOLS = [
   {
     name: "jett_docs_search",
     description:
-      "search06: Search OPTX docs (docs.jettoptx.dev Fumadocs API). Returns titles, URLs, and short snippets.",
+      "search06: Search OPTX docs via GET docs.jettoptx.dev/api/search?query= (Fumadocs). Returns titles, absolute docs.jettoptx.dev URLs, and snippets.",
     inputSchema: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Search query" },
+        query: {
+          type: "string",
+          description: "Search term (mapped to HTTP ?query= — not ?q=, which returns empty)",
+        },
         limit: { type: "number", description: "Max results (default 8, max 20)" },
       },
       required: ["query"],

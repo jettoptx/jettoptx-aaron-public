@@ -6,11 +6,19 @@
 import type { GatewayEnv } from "./cors";
 import { JETT_AUGMENTS, type AugmentEntry } from "../data/jett-augments";
 
+/**
+ * Verified Fumadocs search API (jettoptx-docs):
+ *   GET https://docs.jettoptx.dev/api/search?query=<term>   ← works
+ *   GET https://www.jettoptx.dev/api/search?query=<term>    ← works
+ *   ?q= returns [] — never use that param on the HTTP API.
+ * Hits: { id, type: "page"|"text", content, url, breadcrumbs? }
+ * Returned links are always absolute under https://docs.jettoptx.dev.
+ */
 const DOCS_BASE = "https://docs.jettoptx.dev";
 const DOCS_SEARCH_ENDPOINTS = [
   `${DOCS_BASE}/api/search`,
   "https://www.jettoptx.dev/api/search",
-];
+] as const;
 
 const FETCH_TIMEOUT_MS = 4_000;
 const DIAGNOSE_PROBE_TIMEOUT_MS = 3_000;
@@ -64,16 +72,18 @@ const STATIC_DOC_INDEX: Array<{ title: string; url: string; snippet: string; tag
 ];
 
 export interface DocsSearchHit {
+  id?: string;
   title: string;
   url: string;
   snippet: string;
-  type?: string;
+  type?: "page" | "text" | string;
   breadcrumbs?: string[];
 }
 
+/** Raw hit from docs.jettoptx.dev / www.jettoptx.dev `/api/search?query=`. */
 interface FumadocsHit {
   id?: string;
-  type?: string;
+  type?: "page" | "text" | string;
   content?: string;
   url?: string;
   breadcrumbs?: string[];
@@ -97,8 +107,19 @@ function clampLimit(raw: unknown): number {
   return Math.min(Math.floor(n), MAX_SEARCH_LIMIT);
 }
 
+/** Force absolute docs.jettoptx.dev links (rewrite www / relative paths). */
 function absoluteDocsUrl(pathOrUrl: string): string {
-  if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) return pathOrUrl;
+  try {
+    if (pathOrUrl.startsWith("http://") || pathOrUrl.startsWith("https://")) {
+      const u = new URL(pathOrUrl);
+      if (u.hostname === "docs.jettoptx.dev" || u.hostname === "www.jettoptx.dev" || u.hostname === "jettoptx.dev") {
+        return `${DOCS_BASE}${u.pathname}${u.search}${u.hash}`;
+      }
+      return pathOrUrl;
+    }
+  } catch {
+    /* fall through */
+  }
   if (pathOrUrl.startsWith("/")) return `${DOCS_BASE}${pathOrUrl}`;
   return `${DOCS_BASE}/${pathOrUrl}`;
 }
@@ -114,22 +135,24 @@ function normalizeFumadocsHits(data: FumadocsHit[], limit: number): DocsSearchHi
   const seen = new Set<string>();
 
   for (const item of data) {
-    if (!item?.url || !item?.content) continue;
+    if (!item?.url || typeof item.content !== "string") continue;
     const url = absoluteDocsUrl(item.url);
-    const snippet = stripMarks(item.content).slice(0, 280);
+    const content = stripMarks(item.content).slice(0, 280);
+    // page hits: content is the page title; text hits: content is a snippet.
     const title =
       item.type === "page"
-        ? snippet
+        ? content
         : (item.breadcrumbs?.slice(-1)[0] ?? item.id ?? url);
 
-    const key = `${url}::${snippet}`;
+    const key = item.id ?? `${url}::${content}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
     hits.push({
+      id: item.id,
       title: String(title).slice(0, 160),
       url,
-      snippet,
+      snippet: content,
       type: item.type,
       breadcrumbs: item.breadcrumbs,
     });
@@ -162,6 +185,7 @@ function searchStaticIndex(query: string, limit: number): DocsSearchHit[] {
 }
 
 export async function jettDocsSearch(args: Record<string, unknown>): Promise<unknown> {
+  // MCP arg may be `query` (preferred) or `q` (alias). HTTP API always uses `?query=` — never `?q=`.
   const query = String(args.query ?? args.q ?? "").trim().slice(0, 200);
   const limit = clampLimit(args.limit);
   if (!query) {
@@ -170,8 +194,9 @@ export async function jettDocsSearch(args: Record<string, unknown>): Promise<unk
 
   for (const endpoint of DOCS_SEARCH_ENDPOINTS) {
     try {
-      const url = `${endpoint}?query=${encodeURIComponent(query)}`;
-      const res = await fetchWithTimeout(url, FETCH_TIMEOUT_MS, {
+      const apiUrl = new URL(endpoint);
+      apiUrl.searchParams.set("query", query);
+      const res = await fetchWithTimeout(apiUrl.toString(), FETCH_TIMEOUT_MS, {
         headers: { Accept: "application/json" },
       });
       if (!res.ok) continue;
@@ -183,6 +208,7 @@ export async function jettDocsSearch(args: Record<string, unknown>): Promise<unk
         augment: "06",
         tool: "jett_docs_search",
         source: endpoint,
+        queryParam: "query",
         query,
         count: results.length,
         results,
@@ -198,6 +224,7 @@ export async function jettDocsSearch(args: Record<string, unknown>): Promise<unk
     augment: "06",
     tool: "jett_docs_search",
     source: "static-index",
+    queryParam: "query",
     query,
     count: results.length,
     results,
