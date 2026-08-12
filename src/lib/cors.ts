@@ -12,6 +12,12 @@ export interface GatewayEnv {
   SPACETIME_HTTP_URL?: string;
   /** Admin MCP API key (set as Worker secret in dashboard) */
   MCP_API_KEY?: string;
+  /**
+   * SHIELD4 X OAuth allowlist JSON (Worker secret).
+   * Shape: { "<xUsername>": { "twinId": "...", "wallet"?: "...", "email"?: "...", "founderBypass"?: boolean } }
+   * Empty / unset / invalid → fail-closed for X OAuth (MCP_API_KEY + SpacetimeDB keys still work).
+   */
+  SHIELD4_ALLOWLIST_JSON?: string;
   /** Helius mainnet RPC for WEALTH8 JTX / NFT checks */
   HELIUS_MAINNET_RPC?: string;
 }
