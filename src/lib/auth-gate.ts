@@ -5,6 +5,9 @@
  *   - Authorization: Bearer <MCP_API_KEY | SpacetimeDB key | X OAuth access token>
  *   - X-JOE-Token: <MCP_API_KEY | SpacetimeDB key>
  *
+ * X OAuth identities come from Worker secret `SHIELD4_ALLOWLIST_JSON` (parsed at runtime).
+ * Empty / invalid allowlist fails closed for X OAuth; MCP_API_KEY + SpacetimeDB keys still work.
+ *
  * SpacetimeDB HTTP `/sql` accepts a raw SQL body with no parameter binding.
  * Values that reach SQL are therefore strictly whitelisted before interpolation
  * (see `isSafeTwinId` / `isSha256Hex`). Quote-escaping alone is not relied upon.
@@ -32,15 +35,48 @@ interface Shield4Account {
   founderBypass?: boolean;
 }
 
-/** Public founder allowlist (X username → twin / wallet). Not a secret; keep surface small. */
-const SHIELD4_AUTHORIZED_X_ACCOUNTS: Record<string, Shield4Account> = {
-  jettoptx: {
-    twinId: "jettoptx",
-    wallet: "FEUwuvXbbSYTCEhhqgAt2viTsEnromNNDsapoFvyfy3H",
-    email: "joe@jettoptics.ai",
-    founderBypass: true,
-  },
-};
+/**
+ * Parse `SHIELD4_ALLOWLIST_JSON` Worker secret.
+ * Empty / unset / invalid JSON → empty map (fail-closed for X OAuth only).
+ * Keys are normalized to lowercase X usernames.
+ */
+function parseShield4Allowlist(raw: string | undefined): Record<string, Shield4Account> {
+  if (!raw?.trim()) return {};
+
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+    const out: Record<string, Shield4Account> = {};
+    for (const [username, value] of Object.entries(parsed as Record<string, unknown>)) {
+      const key = username.trim().toLowerCase();
+      if (!key || !value || typeof value !== "object" || Array.isArray(value)) continue;
+
+      const row = value as Record<string, unknown>;
+      const twinId = typeof row.twinId === "string" ? row.twinId.trim() : "";
+      if (!twinId || !isSafeTwinId(twinId)) continue;
+
+      const account: Shield4Account = { twinId };
+      if (typeof row.wallet === "string" && row.wallet.trim()) {
+        account.wallet = row.wallet.trim();
+      }
+      if (typeof row.email === "string" && row.email.trim()) {
+        account.email = row.email.trim();
+      }
+      if (typeof row.founderBypass === "boolean") {
+        account.founderBypass = row.founderBypass;
+      }
+      out[key] = account;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function loadShield4Allowlist(env: GatewayEnv): Record<string, Shield4Account> {
+  return parseShield4Allowlist(env.SHIELD4_ALLOWLIST_JSON);
+}
 
 /** twinId / owner keys used in SQL: alphanumeric + underscore/hyphen, 1–64 chars. */
 const SAFE_TWIN_ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -340,7 +376,8 @@ async function validateXOAuthToken(token: string): Promise<XUserInfo | null> {
 }
 
 async function mapXUserToIdentity(xUser: XUserInfo, env: GatewayEnv): Promise<AuthResult | null> {
-  const account = SHIELD4_AUTHORIZED_X_ACCOUNTS[xUser.username.toLowerCase()];
+  // Empty / invalid SHIELD4_ALLOWLIST_JSON → fail-closed (no X OAuth identities).
+  const account = loadShield4Allowlist(env)[xUser.username.toLowerCase()];
   if (!account) return null;
 
   const billing = await checkBillingGate(account, env);

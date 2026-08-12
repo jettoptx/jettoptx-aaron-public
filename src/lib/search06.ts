@@ -372,9 +372,11 @@ export async function jettEdgeDiagnose(
     mcpRoute: "mcp.jettoptics.ai/*",
   };
 
+  // Booleans only — never echo secret values or allowlist contents.
   const configFlags = {
     mcpApiKeyConfigured: Boolean(env.MCP_API_KEY?.trim()),
     heliusRpcConfigured: Boolean(env.HELIUS_MAINNET_RPC?.trim()),
+    shield4AllowlistConfigured: Boolean(env.SHIELD4_ALLOWLIST_JSON?.trim()),
   };
 
   const probes: OriginProbe[] = [];

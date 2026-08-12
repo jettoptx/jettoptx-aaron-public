@@ -29,7 +29,9 @@ MCP paths (`/mcp`, and non-public HEDGEHOG routes) are gated by `validateJoeToke
 |------------|-------------|----------|
 | Static admin key (`MCP_API_KEY` Worker secret) | `Authorization: Bearer` or `X-JOE-Token` | Accept (spaceCowboy tier) |
 | SpacetimeDB `jtx_api_key` | `Authorization: Bearer` or `X-JOE-Token` | Hash lookup via SpacetimeDB HTTP SQL |
-| X OAuth access token | `Authorization: Bearer` only | Map username → SHIELD4 allowlist + billing gate |
+| X OAuth access token | `Authorization: Bearer` only | Map username → `SHIELD4_ALLOWLIST_JSON` + billing gate |
+
+**X OAuth allowlist:** set Worker secret `SHIELD4_ALLOWLIST_JSON` to a JSON object keyed by X username (lowercase), e.g. `{"example_user":{"twinId":"example_user","wallet":"…","founderBypass":false}}`. Empty, unset, or invalid JSON fails closed for X OAuth only — `MCP_API_KEY` and SpacetimeDB keys continue to work. Do not commit real wallets or emails.
 
 **Do not** put API keys in the query string (`?key=`). Query credentials leak via access logs, proxies, and `Referer`.
 
@@ -96,7 +98,8 @@ Secrets (dashboard or CLI — **never commit**):
 
 ```bash
 npx wrangler secret put MCP_API_KEY
-npx wrangler secret put HELIUS_MAINNET_RPC   # optional
+npx wrangler secret put SHIELD4_ALLOWLIST_JSON   # X OAuth allowlist JSON (see Auth)
+npx wrangler secret put HELIUS_MAINNET_RPC       # optional
 # Optional:
 # npx wrangler secret put CF_ACCESS_CLIENT_ID
 # npx wrangler secret put CF_ACCESS_CLIENT_SECRET
