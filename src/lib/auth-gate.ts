@@ -153,6 +153,21 @@ function heliusRpc(env: GatewayEnv): string {
   return env.HELIUS_MAINNET_RPC?.trim() || DEFAULT_HELIUS_RPC;
 }
 
+/**
+ * Cloudflare Access service-token headers for SpacetimeDB HTTP calls.
+ * Returns {} unless both Worker secrets are set (preview/dev stays unchanged).
+ * Never log or interpolate these values into SQL.
+ */
+function spacetimeAccessHeaders(env: GatewayEnv): Record<string, string> {
+  const id = env.CF_ACCESS_CLIENT_ID?.trim();
+  const secret = env.CF_ACCESS_CLIENT_SECRET?.trim();
+  if (!id || !secret) return {};
+  return {
+    "CF-Access-Client-Id": id,
+    "CF-Access-Client-Secret": secret,
+  };
+}
+
 async function getJtxBalance(wallet: string, env: GatewayEnv): Promise<number> {
   const rpc = heliusRpc(env);
   const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
@@ -229,6 +244,7 @@ async function hasSpaceCowboyNFT(wallet: string, env: GatewayEnv): Promise<boole
 async function checkStripeSubscription(
   twinId: string,
   spacetimeUrl: string,
+  env: GatewayEnv,
 ): Promise<BillingTier> {
   // SpacetimeDB HTTP SQL has no bind parameters — reject anything outside the twinId charset.
   if (!isSafeTwinId(twinId)) return "none";
@@ -239,7 +255,7 @@ async function checkStripeSubscription(
       `AND (owner = '${twinId}' OR key = 'sub:${twinId}')`;
     const res = await fetch(`${spacetimeUrl.replace(/\/$/, "")}/sql`, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "text/plain", ...spacetimeAccessHeaders(env) },
       body: sql,
     });
     if (!res.ok) return "none";
@@ -297,7 +313,7 @@ async function checkBillingGate(account: Shield4Account, env: GatewayEnv): Promi
 
   const spacetimeUrl = env.SPACETIME_HTTP_URL?.trim();
   if (spacetimeUrl) {
-    const stripeTier = await checkStripeSubscription(account.twinId, spacetimeUrl);
+    const stripeTier = await checkStripeSubscription(account.twinId, spacetimeUrl, env);
     if (stripeTier !== "none") {
       const entry: BillingCacheEntry = {
         tier: stripeTier,
@@ -398,7 +414,11 @@ async function mapXUserToIdentity(xUser: XUserInfo, env: GatewayEnv): Promise<Au
   };
 }
 
-async function validateKeyAgainstDB(keyValue: string, spacetimeUrl: string): Promise<ApiKeyRow | null> {
+async function validateKeyAgainstDB(
+  keyValue: string,
+  spacetimeUrl: string,
+  env: GatewayEnv,
+): Promise<ApiKeyRow | null> {
   const hash = await sha256(keyValue);
   // Defense in depth: only interpolate a well-formed SHA-256 hex digest (never raw key material).
   if (!isSha256Hex(hash)) return null;
@@ -408,7 +428,7 @@ async function validateKeyAgainstDB(keyValue: string, spacetimeUrl: string): Pro
   try {
     const res = await fetch(`${spacetimeUrl.replace(/\/$/, "")}/sql`, {
       method: "POST",
-      headers: { "Content-Type": "text/plain" },
+      headers: { "Content-Type": "text/plain", ...spacetimeAccessHeaders(env) },
       body: sql,
     });
     if (!res.ok) return null;
@@ -444,11 +464,15 @@ async function validateKeyAgainstDB(keyValue: string, spacetimeUrl: string): Pro
   }
 }
 
-async function touchKeyUsage(keyId: number, spacetimeUrl: string): Promise<void> {
+async function touchKeyUsage(
+  keyId: number,
+  spacetimeUrl: string,
+  env: GatewayEnv,
+): Promise<void> {
   try {
     await fetch(`${spacetimeUrl.replace(/\/$/, "")}/call/touch_api_key`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...spacetimeAccessHeaders(env) },
       body: JSON.stringify([keyId]),
     });
   } catch {
@@ -483,9 +507,9 @@ export async function validateJoeToken(
     }
 
     if (spacetimeUrl) {
-      const dbKey = await validateKeyAgainstDB(token, spacetimeUrl);
+      const dbKey = await validateKeyAgainstDB(token, spacetimeUrl, env);
       if (dbKey) {
-        touchKeyUsage(dbKey.id, spacetimeUrl);
+        touchKeyUsage(dbKey.id, spacetimeUrl, env);
         return {
           ok: true,
           identity: `joe:${dbKey.twin_id}`,
@@ -519,9 +543,9 @@ export async function validateJoeToken(
       };
     }
     if (spacetimeUrl) {
-      const dbKey = await validateKeyAgainstDB(headerKey, spacetimeUrl);
+      const dbKey = await validateKeyAgainstDB(headerKey, spacetimeUrl, env);
       if (dbKey) {
-        touchKeyUsage(dbKey.id, spacetimeUrl);
+        touchKeyUsage(dbKey.id, spacetimeUrl, env);
         return {
           ok: true,
           identity: `joe:${dbKey.twin_id}`,
