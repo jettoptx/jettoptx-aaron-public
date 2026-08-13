@@ -10,6 +10,12 @@ export interface GatewayEnv {
   CORS_DEV_DOMAINS?: string;
   /** SpacetimeDB HTTP SQL endpoint — e.g. https://stdb.jettoptics.ai/v1/database/jettchat */
   SPACETIME_HTTP_URL?: string;
+  /**
+   * Optional Cloudflare Access service-token credentials for SpacetimeDB fetches.
+   * Both must be set (Worker secrets) or Access headers are omitted.
+   */
+  CF_ACCESS_CLIENT_ID?: string;
+  CF_ACCESS_CLIENT_SECRET?: string;
   /** Admin MCP API key (set as Worker secret in dashboard) */
   MCP_API_KEY?: string;
   /**

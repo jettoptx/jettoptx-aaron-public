@@ -20,6 +20,8 @@ CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jet
 #   SHIELD4_ALLOWLIST_JSON   — X OAuth username → { twinId, wallet?, email?, founderBypass? }
 #                              Empty/unset = fail-closed for X OAuth only
 #   HELIUS_MAINNET_RPC       — optional paid RPC; code falls back to public mainnet-beta
+#   CF_ACCESS_CLIENT_ID      — optional; Cloudflare Access service token (with SECRET below)
+#   CF_ACCESS_CLIENT_SECRET  — optional; both required for Access headers on SpacetimeDB fetches
 #   XAI_API_KEY              — optional; prefer keeping model keys on origin AARON
 
 [limits]
