@@ -19,7 +19,18 @@
 | Host | Role |
 |------|------|
 | `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
-| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health |
+| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; Discord/mobile MOJO deep-link |
+
+## MOJO deep-link (`/v`)
+
+Public Discord / mobile entry (edge-only, not proxied to AARON origin):
+
+```text
+GET https://mcp.jettoptics.ai/v?s={opaqueSessionId}
+→ 302 Location: jettmojo://verify?s={opaqueSessionId}
+```
+
+`s` must be URL-safe `A-Za-z0-9_-`, length 8–128. Missing or invalid → `400` (no redirect). No secrets in the URL — opaque session id only.
 
 ## Auth
 
