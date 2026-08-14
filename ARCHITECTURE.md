@@ -10,6 +10,7 @@ Clients (Cursor, Hermes, jettoptx.chat, agents)
         ▼
 jettoptx-aaron-public (Cloudflare Worker)
   ├── JOE API token gate (MCP paths)
+  ├── /v MOJO deep-link (302 → jettmojo://verify?s=…)
   ├── AARON proxy → aaron.jettoptics.ai
   └── HEDGEHOG MCP → mcp.jettoptics.ai handlers / origin
 ```

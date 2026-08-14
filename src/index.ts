@@ -15,6 +15,7 @@ import { getCorsHeaders, addRequestId, jsonResponse } from "./lib/cors";
 import { validateJoeToken } from "./lib/auth-gate";
 import { isAaronPath, proxyToAaron } from "./aaron-gateway";
 import { isHedgehogPath, handleHedgehog } from "./hedgehog-mcp";
+import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
 
 export default {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -28,6 +29,11 @@ export default {
     }
 
     try {
+      // Discord / mobile MOJO deep-link (edge-only; not proxied to origin)
+      if (isMojoDeeplinkPath(url.pathname)) {
+        return handleMojoDeeplink(request, env, requestId);
+      }
+
       // HEDGEHOG MCP + health
       if (isHedgehogPath(url.pathname)) {
         const auth = await validateJoeToken(request, url.pathname, env);
@@ -48,7 +54,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /health, /session, /verify, /gaze, /x402, /orphan/402",
+          hint: "Use /mcp, /health, /v, /session, /verify, /gaze, /x402, /orphan/402",
           requestId,
         },
         404,
