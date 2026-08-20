@@ -17,6 +17,15 @@ export function isHedgehogPath(pathname: string): boolean {
   );
 }
 
+/**
+ * Exact JettChat census path (aaron-router GET /mcp/jettchat).
+ * Must be checked in index.ts BEFORE isHedgehogPath — `/mcp/` would swallow it.
+ * Prefixes such as /mcp/jettchat/ are not this route.
+ */
+export function isJettchatCensusPath(pathname: string): boolean {
+  return pathname === "/mcp/jettchat";
+}
+
 export async function handleHedgehog(
   request: Request,
   env: GatewayEnv,

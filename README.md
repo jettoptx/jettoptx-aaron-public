@@ -19,7 +19,7 @@
 | Host | Role |
 |------|------|
 | `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
-| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; Discord/mobile MOJO deep-link |
+| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; JOE-gated `GET/POST /joe/mcp` (AddMcpServer); JOE-gated `POST/GET /joe/hedgehog`; JOE-gated `GET /mcp/jettchat` census; Discord/mobile MOJO deep-link |
 
 ## MOJO deep-link (`/v`)
 
@@ -34,7 +34,13 @@ GET https://mcp.jettoptics.ai/v?s={opaqueSessionId}
 
 ## Auth
 
-MCP paths (`/mcp`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health` and `/.well-known/joe-gateway`.
+MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health` and `/.well-known/joe-gateway`.
+
+**Joe/mcp (Computer AddMcpServer only):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/mcp` and `/joe/mcp/sse`. Auth is **header-only** — `Authorization: Bearer` or `X-JOE-Token`. No token in the URL (`?token=` / `?key=` → `401`). Missing header → `401` (no proxy); a phone sheet cannot auth. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. **Not** Hedgehog `/mcp`. First-match before `isHedgehogPath` / `isAaronPath`.
+
+**Joe/hedgehog MCP transport:** `POST`/`GET` `https://mcp.jettoptics.ai/joe/hedgehog` (optional trailing slash; SSE sibling `/joe/hedgehog/sse`) with `Authorization: Bearer` or `X-JOE-Token` (same `validateJoeToken` as `/mcp`). Missing or wrong token → `401` (no proxy). On success the Worker `proxyToAaron` to `AARON_ORIGIN` — this path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, and is **not** proxied to Hedgehog `:8811`. First-match before `isHedgehogPath` / `isAaronPath` so `/mcp/*` cannot swallow it. The Worker does not implement MCP tools or run SQL.
+
+**JettChat census (Grok Bots):** `GET https://mcp.jettoptics.ai/mcp/jettchat` with `Authorization: Bearer` or `X-JOE-Token` (same JOE token as `/mcp`). Missing or wrong token → `401` (no proxy). On success the Worker proxies to `AARON_ORIGIN` — this path is **not** in ungated `AARON_PATHS`. Exact path only (`/mcp/jettchat/…` is not this route). `POST /mcp` remains HEDGEHOG MCP.
 
 | Credential | How to send | Behavior |
 |------------|-------------|----------|
@@ -123,6 +129,9 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for edge planes, client stack, and secu
 
 ```text
 Client  →  Cloudflare Worker (this repo)
+              ├── GET/POST /joe/mcp → JOE header gate → proxy → AARON_ORIGIN (AddMcpServer; not AARON_PATHS)
+              ├── POST/GET /joe/hedgehog → JOE token gate → proxy → AARON_ORIGIN (not AARON_PATHS)
+              ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
               ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
               └── /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
 ```
