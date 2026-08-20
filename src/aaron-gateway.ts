@@ -15,11 +15,44 @@ const AARON_PATHS = [
   "/x402",
   "/orphan",
   "/.well-known/agent-card.json",
+  // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
+  // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
+  // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
 ];
 
 export function isAaronPath(pathname: string): boolean {
   return AARON_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
+/**
+ * Joe/hedgehog MCP transport on the public Worker.
+ * Exact /joe/hedgehog (optional trailing slash) and /joe/hedgehog/sse.
+ * Must be first-match in index.ts BEFORE isHedgehogPath and isAaronPath.
+ * Not AARON_PATHS. Not /mcp/* (hedgehog would swallow).
+ */
+export function isJoeHedgehogPath(pathname: string): boolean {
+  return (
+    pathname === "/joe/hedgehog" ||
+    pathname === "/joe/hedgehog/" ||
+    pathname === "/joe/hedgehog/sse" ||
+    pathname === "/joe/hedgehog/sse/"
+  );
+}
+
+/**
+ * Computer AddMcpServer door (header auth only — no token in the URL).
+ * Exact /joe/mcp and /joe/mcp/sse (optional trailing slash). GET/POST.
+ * First-match in index.ts BEFORE isHedgehogPath and isAaronPath.
+ * Not AARON_PATHS. Not Hedgehog /mcp. Phone sheet cannot auth (no header).
+ */
+export function isJoeMcpPath(pathname: string): boolean {
+  return (
+    pathname === "/joe/mcp" ||
+    pathname === "/joe/mcp/" ||
+    pathname === "/joe/mcp/sse" ||
+    pathname === "/joe/mcp/sse/"
   );
 }
 
