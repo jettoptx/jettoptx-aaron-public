@@ -15,6 +15,7 @@ const AARON_PATHS = [
   "/x402",
   "/orphan",
   "/.well-known/agent-card.json",
+  // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
 ];
 
 export function isAaronPath(pathname: string): boolean {
