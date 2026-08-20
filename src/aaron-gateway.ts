@@ -16,11 +16,27 @@ const AARON_PATHS = [
   "/orphan",
   "/.well-known/agent-card.json",
   // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
+  // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
 ];
 
 export function isAaronPath(pathname: string): boolean {
   return AARON_PATHS.some(
     (p) => pathname === p || pathname.startsWith(p + "/"),
+  );
+}
+
+/**
+ * Joe/hedgehog MCP transport on the public Worker.
+ * Exact /joe/hedgehog (optional trailing slash) and /joe/hedgehog/sse.
+ * Must be first-match in index.ts BEFORE isHedgehogPath and isAaronPath.
+ * Not AARON_PATHS. Not /mcp/* (hedgehog would swallow). Not /joe/mcp.
+ */
+export function isJoeHedgehogPath(pathname: string): boolean {
+  return (
+    pathname === "/joe/hedgehog" ||
+    pathname === "/joe/hedgehog/" ||
+    pathname === "/joe/hedgehog/sse" ||
+    pathname === "/joe/hedgehog/sse/"
   );
 }
 
