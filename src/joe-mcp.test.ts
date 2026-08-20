@@ -1,12 +1,12 @@
 /**
- * Proves POST/GET /joe/hedgehog is JOE-gated and proxied to AARON_ORIGIN,
- * not AARON_PATHS, not Hedgehog :8811, and not swallowed as /mcp/*.
- * GET /mcp/jettchat and POST /mcp stay unchanged. /joe/mcp is a separate door.
+ * Proves GET/POST /joe/mcp and /joe/mcp/sse are JOE-gated and proxied to
+ * AARON_ORIGIN. Header auth only (no token in the URL). Not AARON_PATHS.
+ * Not Hedgehog /mcp. Phone sheet cannot auth (no header).
  *
  * Run: npm test
  */
 import worker from "./index";
-import { isAaronPath, isJoeHedgehogPath } from "./aaron-gateway";
+import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath } from "./aaron-gateway";
 import { isHedgehogPath, isJettchatCensusPath } from "./hedgehog-mcp";
 import type { GatewayEnv } from "./lib/cors";
 
@@ -61,36 +61,52 @@ function assert(cond: unknown, msg: string): void {
 }
 
 async function run(): Promise<void> {
-  assert(isJoeHedgehogPath("/joe/hedgehog") === true, "exact /joe/hedgehog is the Joe/hedgehog door");
-  assert(isJoeHedgehogPath("/joe/hedgehog/") === true, "optional trailing slash is the Joe/hedgehog door");
-  assert(isJoeHedgehogPath("/joe/hedgehog/sse") === true, "/joe/hedgehog/sse is the Joe/hedgehog SSE sibling");
-  assert(isJoeHedgehogPath("/joe/mcp") === false, "/joe/mcp is a separate Joe MCP door");
-  assert(isJoeHedgehogPath("/mcp") === false, "/mcp is not the Joe/hedgehog door");
-  assert(isJoeHedgehogPath("/mcp/jettchat") === false, "census path is not the Joe/hedgehog door");
-  assert(isJoeHedgehogPath("/joe/hedgehog/extra") === false, "prefix /joe/hedgehog/extra is not this door");
+  assert(isJoeMcpPath("/joe/mcp") === true, "exact /joe/mcp is the Computer AddMcpServer door");
+  assert(isJoeMcpPath("/joe/mcp/") === true, "optional trailing slash is the /joe/mcp door");
+  assert(isJoeMcpPath("/joe/mcp/sse") === true, "/joe/mcp/sse is the SSE sibling");
+  assert(isJoeMcpPath("/joe/mcp/sse/") === true, "optional trailing slash on SSE sibling");
+  assert(isJoeMcpPath("/mcp") === false, "/mcp is Hedgehog, not /joe/mcp");
+  assert(isJoeMcpPath("/mcp/jettchat") === false, "census is not /joe/mcp");
+  assert(isJoeMcpPath("/joe/hedgehog") === false, "Joe/hedgehog is a separate door");
+  assert(isJoeMcpPath("/joe/mcp/extra") === false, "prefix /joe/mcp/extra is not this door");
 
-  assert(isHedgehogPath("/joe/hedgehog") === false, "/joe/hedgehog is not swallowed as /mcp/*");
+  assert(isJoeHedgehogPath("/joe/mcp") === false, "/joe/mcp is not the Joe/hedgehog matcher");
+  assert(isHedgehogPath("/joe/mcp") === false, "/joe/mcp is not treated as Hedgehog /mcp");
+  assert(isHedgehogPath("/joe/mcp/sse") === false, "/joe/mcp/sse is not Hedgehog /mcp/*");
   assert(isHedgehogPath("/mcp") === true, "POST /mcp stays hedgehog");
-  assert(isAaronPath("/joe/hedgehog") === false, "/joe/hedgehog is not in AARON_PATHS");
-  assert(isAaronPath("/joe/hedgehog/") === false, "/joe/hedgehog/ is not in AARON_PATHS");
-  assert(isAaronPath("/joe/hedgehog/sse") === false, "/joe/hedgehog/sse is not in AARON_PATHS");
-  assert(isAaronPath("/session") === true, "/session remains an ungated Aaron path");
-
+  assert(isAaronPath("/joe/mcp") === false, "/joe/mcp is not in AARON_PATHS");
+  assert(isAaronPath("/joe/mcp/") === false, "/joe/mcp/ is not in AARON_PATHS");
+  assert(isAaronPath("/joe/mcp/sse") === false, "/joe/mcp/sse is not in AARON_PATHS");
   assert(isJettchatCensusPath("/mcp/jettchat") === true, "GET /mcp/jettchat is still the census special case");
-  assert(isJettchatCensusPath("/joe/hedgehog") === false, "Joe/hedgehog is not the census path");
 
   installFetchMock();
   try {
     const missing = await worker.fetch(
-      new Request("https://mcp.jettoptics.ai/joe/hedgehog", { method: "POST" }),
+      new Request("https://mcp.jettoptics.ai/joe/mcp", { method: "POST" }),
       env,
       ctx,
     );
-    assert(missing.status === 401, `missing token → 401, got ${missing.status}`);
-    assert(fetchCalls.length === 0, "missing token must not proxy or count");
+    assert(missing.status === 401, `no header → 401, got ${missing.status}`);
+    assert(fetchCalls.length === 0, "phone sheet / no header must not proxy");
+
+    const queryToken = await worker.fetch(
+      new Request(`https://mcp.jettoptics.ai/joe/mcp?token=${JOE_TOKEN}`, { method: "POST" }),
+      env,
+      ctx,
+    );
+    assert(queryToken.status === 401, `token in URL → 401, got ${queryToken.status}`);
+    assert(fetchCalls.length === 0, "query-string token must not proxy");
+
+    const queryKey = await worker.fetch(
+      new Request(`https://mcp.jettoptics.ai/joe/mcp?key=${JOE_TOKEN}`, { method: "GET" }),
+      env,
+      ctx,
+    );
+    assert(queryKey.status === 401, `?key= in URL → 401, got ${queryKey.status}`);
+    assert(fetchCalls.length === 0, "?key= must not proxy");
 
     const wrong = await worker.fetch(
-      new Request("https://mcp.jettoptics.ai/joe/hedgehog", {
+      new Request("https://mcp.jettoptics.ai/joe/mcp", {
         method: "POST",
         headers: { "X-JOE-Token": "wrong-token" },
       }),
@@ -98,10 +114,10 @@ async function run(): Promise<void> {
       ctx,
     );
     assert(wrong.status === 401, `wrong token → 401, got ${wrong.status}`);
-    assert(fetchCalls.length === 0, "wrong token must not proxy or count");
+    assert(fetchCalls.length === 0, "wrong token must not proxy");
 
     const ok = await worker.fetch(
-      new Request("https://mcp.jettoptics.ai/joe/hedgehog", {
+      new Request("https://mcp.jettoptics.ai/joe/mcp", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${JOE_TOKEN}`,
@@ -115,18 +131,17 @@ async function run(): Promise<void> {
     assert(ok.status === 200, `valid Bearer → proxy 200, got ${ok.status}`);
     assert(fetchCalls.length === 1, `valid token proxies once, got ${fetchCalls.length}`);
     assert(
-      fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/hedgehog`),
-      `proxied to AARON_ORIGIN /joe/hedgehog, got ${fetchCalls[0].url}`,
+      fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/mcp`),
+      `proxied to AARON_ORIGIN /joe/mcp, got ${fetchCalls[0].url}`,
     );
     assert(fetchCalls[0].method === "POST", `POST is forwarded, got ${fetchCalls[0].method}`);
     assert(!fetchCalls[0].url.includes("8811"), "must not proxy to Hedgehog :8811");
     assert(!fetchCalls[0].url.startsWith(HEDGEHOG_ORIGIN), "must not proxy to HEDGEHOG_ORIGIN");
-    assert(!fetchCalls[0].url.includes("stdb."), "Joe/hedgehog must not call SpacetimeDB");
-    assert(!fetchCalls[0].url.includes("/joe/mcp"), "Joe/hedgehog must not rewrite to /joe/mcp");
+    assert(!fetchCalls[0].url.includes("stdb."), "must not call SpacetimeDB");
 
     fetchCalls = [];
     const headerOk = await worker.fetch(
-      new Request("https://mcp.jettoptics.ai/joe/hedgehog", {
+      new Request("https://mcp.jettoptics.ai/joe/mcp", {
         method: "GET",
         headers: { "X-JOE-Token": JOE_TOKEN },
       }),
@@ -135,38 +150,44 @@ async function run(): Promise<void> {
     );
     assert(headerOk.status === 200, `X-JOE-Token GET → proxy 200, got ${headerOk.status}`);
     assert(
-      fetchCalls.length === 1 && fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/hedgehog`),
-      "X-JOE-Token also proxies to AARON_ORIGIN /joe/hedgehog",
+      fetchCalls.length === 1 && fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/mcp`),
+      "X-JOE-Token also proxies to AARON_ORIGIN /joe/mcp",
     );
 
     fetchCalls = [];
     const sseOk = await worker.fetch(
-      new Request("https://mcp.jettoptics.ai/joe/hedgehog/sse", {
+      new Request("https://mcp.jettoptics.ai/joe/mcp/sse", {
         method: "GET",
         headers: { Authorization: `Bearer ${JOE_TOKEN}` },
       }),
       env,
       ctx,
     );
-    assert(sseOk.status === 200, `GET /joe/hedgehog/sse → proxy 200, got ${sseOk.status}`);
+    assert(sseOk.status === 200, `GET /joe/mcp/sse → proxy 200, got ${sseOk.status}`);
     assert(
-      fetchCalls.length === 1 && fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/hedgehog/sse`),
-      `SSE sibling proxies to AARON_ORIGIN /joe/hedgehog/sse, got ${fetchCalls[0]?.url}`,
+      fetchCalls.length === 1 && fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/mcp/sse`),
+      `SSE sibling proxies to AARON_ORIGIN /joe/mcp/sse, got ${fetchCalls[0]?.url}`,
     );
 
     fetchCalls = [];
-    const census = await worker.fetch(
-      new Request("https://mcp.jettoptics.ai/mcp/jettchat", {
-        method: "GET",
-        headers: { Authorization: `Bearer ${JOE_TOKEN}` },
+    const ssePost = await worker.fetch(
+      new Request("https://mcp.jettoptics.ai/joe/mcp/sse", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${JOE_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
       }),
       env,
       ctx,
     );
-    assert(census.status === 200, `GET /mcp/jettchat still census 200, got ${census.status}`);
+    assert(ssePost.status === 200, `POST /joe/mcp/sse → proxy 200, got ${ssePost.status}`);
     assert(
-      fetchCalls.length === 1 && fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/mcp/jettchat`),
-      "GET /mcp/jettchat is still the census special case to AARON_ORIGIN",
+      fetchCalls.length === 1 &&
+        fetchCalls[0].method === "POST" &&
+        fetchCalls[0].url.startsWith(`${AARON_ORIGIN}/joe/mcp/sse`),
+      "POST /joe/mcp/sse proxies to AARON_ORIGIN",
     );
 
     fetchCalls = [];
@@ -197,7 +218,7 @@ async function run(): Promise<void> {
 run()
   .then(() => {
     console.log(
-      "ok: /joe/hedgehog is JOE-gated and proxied to AARON_ORIGIN; POST /mcp and GET /mcp/jettchat unchanged",
+      "ok: /joe/mcp is JOE-gated (header only) and proxied to AARON_ORIGIN; POST /mcp is still hedgehog",
     );
   })
   .catch((err: unknown) => {
