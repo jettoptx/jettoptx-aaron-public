@@ -9,10 +9,12 @@
     "deploy:preview": "wrangler deploy --env preview",
     "tail": "wrangler tail",
     "types": "wrangler types",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsx src/jettchat-census.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250611.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.4.0",
     "wrangler": "^4.0.0"
   }
