@@ -19,6 +19,7 @@ const AARON_PATHS = [
   // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
+  // Do not add /specs — public JOB-SPEC is first-match edge JSON in index.ts (never 402).
 ];
 
 export function isAaronPath(pathname: string): boolean {
