@@ -8,6 +8,9 @@
  * AARON paths (including /x402, /orphan) are proxied ungated — origin-enforced
  * payment / auth on the Jetson AARON router (USDC → jtxfaucet.sol). Out of scope
  * for the JOE MCP token gate unless explicitly added later.
+ *
+ * Exception (edge, not proxied): GET /x402 catalog + GET /x402/prima_title.
+ * prima_title payTo is GtAk (astro.knots.sol). Other x402 services stay 5ct4.
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -16,6 +19,12 @@ import { validateJoeToken } from "./lib/auth-gate";
 import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath, proxyToAaron } from "./aaron-gateway";
 import { isHedgehogPath, handleHedgehog, isJettchatCensusPath } from "./hedgehog-mcp";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
+import {
+  handlePrimaTitle,
+  handleX402Catalog,
+  isPrimaTitlePath,
+  isX402CatalogPath,
+} from "./x402-prima-title";
 
 export default {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -32,6 +41,16 @@ export default {
       // Discord / mobile MOJO deep-link (edge-only; not proxied to origin)
       if (isMojoDeeplinkPath(url.pathname)) {
         return handleMojoDeeplink(request, env, requestId);
+      }
+
+      // GET /x402/prima_title — edge 402 (payTo GtAk). First-match; never proxy (origin 404s).
+      if (isPrimaTitlePath(url.pathname)) {
+        return handlePrimaTitle(request, env, requestId);
+      }
+
+      // GET /x402 — catalog with existing four services + prima_title (dest GtAk).
+      if (isX402CatalogPath(url.pathname)) {
+        return handleX402Catalog(request, env, requestId);
       }
 
       // GET/POST /joe/mcp — Computer AddMcpServer door (header auth only).
