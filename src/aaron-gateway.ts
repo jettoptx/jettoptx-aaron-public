@@ -11,7 +11,8 @@ const AARON_PATHS = [
   "/gaze",
   "/mint",
   "/handshake",
-  // Payable JOE / x402 surface (USDC → jtxfaucet.sol)
+  // Payable JOE / x402 surface (USDC → jtxfaucet.sol).
+  // GET /x402 and GET /x402/prima_title are first-match edge handlers in index.ts.
   "/x402",
   "/orphan",
   "/.well-known/agent-card.json",
