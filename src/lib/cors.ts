@@ -51,7 +51,7 @@ export function getCorsHeaders(request: Request, env: GatewayEnv): Headers {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Allow-Headers":
-      "Content-Type, Authorization, X-Request-ID, X-JOE-Token, CF-Access-Client-Id, CF-Access-Client-Secret",
+      "Content-Type, Authorization, X-Request-ID, X-JOE-Token, CF-Access-Client-Id, CF-Access-Client-Secret, X-PAYMENT, PAYMENT-SIGNATURE, x-payment",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   });

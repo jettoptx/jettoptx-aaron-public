@@ -32,3 +32,21 @@ cpu_ms = 300_000
 [[routes]]
 pattern = "mcp.jettoptics.ai/*"
 zone_name = "jettoptics.ai"
+
+# Prefer aaron.jettoptics.ai as the live x402 door. Exact paths only — do not
+# steal /x402/v1/* (chat, gaze, task stay on origin / 5ct4 faucet).
+[[routes]]
+pattern = "aaron.jettoptics.ai/x402"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/x402/"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/x402/prima_title"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/x402/prima_title/"
+zone_name = "jettoptics.ai"
