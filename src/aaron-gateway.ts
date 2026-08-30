@@ -19,6 +19,7 @@ const AARON_PATHS = [
   // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
+  // Do not add /joe/ore — JOE-gated in index.ts, then proxyToAaron. Helius stays on origin.
   // Do not add /specs — public JOB-SPEC is first-match edge JSON in index.ts (never 402).
 ];
 
@@ -56,6 +57,30 @@ export function isJoeMcpPath(pathname: string): boolean {
     pathname === "/joe/mcp/sse" ||
     pathname === "/joe/mcp/sse/"
   );
+}
+
+/**
+ * JOE-token porch for ORE / AgenC (program oreV3EG1i9BEgiAJ8b177Z2S2rMarzak4NMv1kULvWv).
+ * Explicit list only — do not prefix-match /joe/ore/* (would swallow /joe/ore/extra).
+ * Live origin doors (joe-aaron-router): POST/GET /joe/ore/rpc, GET /joe/ore/subscribe.
+ * Also /joe/ore and /joe/ore/sse (optional trailing slashes).
+ * First-match in index.ts BEFORE isHedgehogPath and isAaronPath.
+ * Not AARON_PATHS. Worker has no Helius — paid gRPC subscribe stays on AARON_ORIGIN.
+ * Unauth GET/POST must 401 (never 404, never a public RPC proxy).
+ */
+const JOE_ORE_PATHS = [
+  "/joe/ore",
+  "/joe/ore/",
+  "/joe/ore/rpc",
+  "/joe/ore/rpc/",
+  "/joe/ore/subscribe",
+  "/joe/ore/subscribe/",
+  "/joe/ore/sse",
+  "/joe/ore/sse/",
+] as const;
+
+export function isJoeOrePath(pathname: string): boolean {
+  return JOE_ORE_PATHS.some((p) => p === pathname);
 }
 
 export async function proxyToAaron(
