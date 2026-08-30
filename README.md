@@ -19,7 +19,7 @@
 | Host | Role |
 |------|------|
 | `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
-| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; JOE-gated `GET/POST /joe/mcp` (AddMcpServer); JOE-gated `POST/GET /joe/hedgehog`; JOE-gated `GET /mcp/jettchat` census; Discord/mobile MOJO deep-link |
+| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; JOE-gated `GET/POST /joe/mcp` (AddMcpServer); JOE-gated `POST/GET /joe/hedgehog`; JOE-gated `GET/POST /joe/ore` (ORE/AgenC porch); JOE-gated `GET /mcp/jettchat` census; Discord/mobile MOJO deep-link |
 
 ## MOJO deep-link (`/v`)
 
@@ -34,11 +34,13 @@ GET https://mcp.jettoptics.ai/v?s={opaqueSessionId}
 
 ## Auth
 
-MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health`, `/.well-known/joe-gateway`, and `GET /specs/prima-depin-job.json`.
+MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `GET/POST /joe/ore`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health`, `/.well-known/joe-gateway`, and `GET /specs/prima-depin-job.json`.
 
 **Joe/mcp (Computer AddMcpServer only):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/mcp` and `/joe/mcp/sse`. Auth is **header-only** — `Authorization: Bearer` or `X-JOE-Token`. No token in the URL (`?token=` / `?key=` → `401`). Missing header → `401` (no proxy); a phone sheet cannot auth. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. **Not** Hedgehog `/mcp`. First-match before `isHedgehogPath` / `isAaronPath`.
 
 **Joe/hedgehog MCP transport:** `POST`/`GET` `https://mcp.jettoptics.ai/joe/hedgehog` (optional trailing slash; SSE sibling `/joe/hedgehog/sse`) with `Authorization: Bearer` or `X-JOE-Token` (same `validateJoeToken` as `/mcp`). Missing or wrong token → `401` (no proxy). On success the Worker `proxyToAaron` to `AARON_ORIGIN` — this path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, and is **not** proxied to Hedgehog `:8811`. First-match before `isHedgehogPath` / `isAaronPath` so `/mcp/*` cannot swallow it. The Worker does not implement MCP tools or run SQL.
+
+**Joe/ore (ORE / AgenC porch):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/ore` (optional trailing slash; SSE sibling `/joe/ore/sse`) with `Authorization: Bearer` or `X-JOE-Token` (same `validateJoeToken` as `/joe/hedgehog`). Missing or wrong token → **`401` (never 404, no proxy)**. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. This Worker has **no Helius** — do not set `HELIUS_API_KEY`, a `SOLANA_RPC_URL` with an api-key, or a new `HELIUS_MAINNET_RPC` here. Paid Helius/gRPC subscribe for program `oreV3EG1i9BEgiAJ8b177Z2S2rMarzak4NMv1kULvWv` stays on **joe-aaron-router** (`AARON_ORIGIN`). First-match before `isHedgehogPath` / `isAaronPath`.
 
 **JettChat census (Grok Bots):** `GET https://mcp.jettoptics.ai/mcp/jettchat` with `Authorization: Bearer` or `X-JOE-Token` (same JOE token as `/mcp`). Missing or wrong token → `401` (no proxy). On success the Worker proxies to `AARON_ORIGIN` — this path is **not** in ungated `AARON_PATHS`. Exact path only (`/mcp/jettchat/…` is not this route). `POST /mcp` remains HEDGEHOG MCP.
 
@@ -148,6 +150,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for edge planes, client stack, and secu
 Client  →  Cloudflare Worker (this repo)
               ├── GET/POST /joe/mcp → JOE header gate → proxy → AARON_ORIGIN (AddMcpServer; not AARON_PATHS)
               ├── POST/GET /joe/hedgehog → JOE token gate → proxy → AARON_ORIGIN (not AARON_PATHS)
+              ├── GET/POST /joe/ore → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
               ├── GET /specs/prima-depin-job.json → public 200 JSON (never 402; not proxied)
               ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
