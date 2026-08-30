@@ -86,9 +86,9 @@ export default {
         return proxyToAaron(request, env, requestId);
       }
 
-      // GET/POST /joe/ore — JOE-gated ORE/AgenC porch. Proxies to AARON_ORIGIN only.
-      // Helius/gRPC subscribe (oreV3EG1i9BEgiAJ8b177Z2S2rMarzak4NMv1kULvWv) stays on
-      // joe-aaron-router. Worker has no HELIUS_API_KEY / paid RPC. Not AARON_PATHS.
+      // GET/POST /joe/ore/rpc and GET /joe/ore/subscribe — JOE-gated ORE/AgenC porch.
+      // Proxies the original path to AARON_ORIGIN only (origin joe-aaron-router PR 17).
+      // Helius/gRPC stays on origin. Worker has no HELIUS_API_KEY / paid RPC. Not AARON_PATHS.
       // First-match BEFORE isHedgehogPath and isAaronPath. Unauth GET/POST → 401, never 404.
       if (isJoeOrePath(url.pathname)) {
         const auth = await validateJoeToken(request, url.pathname, env);
@@ -130,7 +130,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
           requestId,
         },
         404,
