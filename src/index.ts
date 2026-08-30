@@ -18,7 +18,7 @@
 import type { GatewayEnv } from "./lib/cors";
 import { getCorsHeaders, addRequestId, jsonResponse } from "./lib/cors";
 import { validateJoeToken } from "./lib/auth-gate";
-import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath, proxyToAaron } from "./aaron-gateway";
+import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath, isJoeOrePath, proxyToAaron } from "./aaron-gateway";
 import { isHedgehogPath, handleHedgehog, isJettchatCensusPath } from "./hedgehog-mcp";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
 import {
@@ -86,6 +86,19 @@ export default {
         return proxyToAaron(request, env, requestId);
       }
 
+      // GET/POST /joe/ore/rpc and GET /joe/ore/subscribe — JOE-gated ORE/AgenC porch.
+      // Proxies the original path to AARON_ORIGIN only (origin joe-aaron-router PR 17).
+      // Helius/gRPC stays on origin. Worker has no HELIUS_API_KEY / paid RPC. Not AARON_PATHS.
+      // First-match BEFORE isHedgehogPath and isAaronPath. Unauth GET/POST → 401, never 404.
+      if (isJoeOrePath(url.pathname)) {
+        const auth = await validateJoeToken(request, url.pathname, env);
+        if (!auth.ok) {
+          const cors = getCorsHeaders(request, env);
+          return jsonResponse({ error: auth.error, requestId }, 401, cors, requestId);
+        }
+        return proxyToAaron(request, env, requestId);
+      }
+
       // GET /mcp/jettchat — JOE-gated census proxy to AARON_ORIGIN (not AARON_PATHS).
       // Exact path only. Must run before isHedgehogPath or `/mcp/` swallows it.
       if (request.method === "GET" && isJettchatCensusPath(url.pathname)) {
@@ -117,7 +130,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
           requestId,
         },
         404,
