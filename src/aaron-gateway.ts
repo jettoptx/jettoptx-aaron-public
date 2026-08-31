@@ -21,6 +21,8 @@ const AARON_PATHS = [
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/ore — JOE-gated in index.ts, then proxyToAaron. Helius stays on origin.
   // Do not add /specs — public JOB-SPEC is first-match edge JSON in index.ts (never 402).
+  // Do not add /.well-known/agenc-store.json — public unsigned store is first-match edge JSON
+  // in index.ts (never 402, never JOE-gated, never origin). Do not overwrite agent-card.
 ];
 
 export function isAaronPath(pathname: string): boolean {
