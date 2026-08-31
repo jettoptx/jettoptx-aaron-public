@@ -12,6 +12,7 @@ jettoptx-aaron-public (Cloudflare Worker)
   ├── JOE API token gate (MCP paths)
   ├── /v MOJO deep-link (302 → jettmojo://verify?s=…)
   ├── GET /specs/prima-depin-job.json (public JOB-SPEC JSON, never 402)
+  ├── GET /.well-known/agenc-store.json (unsigned agenc.storeManifest.v1, never 402)
   ├── AARON proxy → aaron.jettoptics.ai
   └── HEDGEHOG MCP → mcp.jettoptics.ai handlers / origin
 ```
@@ -52,6 +53,7 @@ Full AARON backend (FastAPI on Jetson), mesh credentials, and operator comms are
 - AARON proxy paths (including `/x402/v1/*`) remain ungated at the edge; origin enforces payment/auth
 - Edge-only x402 exceptions: `GET /x402` catalog (adds `prima_title`) and `GET /x402/prima_title` (402, payTo `GtAk` / `astro.knots.sol`). Other services stay `5ct4` / `jtxfaucet.sol`
 - Public JOB-SPEC: `GET /specs/prima-depin-job.json` is unauthenticated 200 JSON (never 402, never `payTo` / `X-Pay-To`)
+- Public AgenC store: `GET /.well-known/agenc-store.json` is unauthenticated 200 `agenc.storeManifest.v1` JSON on `mcp.jettoptics.ai` / `aaron.jettoptics.ai` only (never 402, never `payTo` header, `signature: null`, `status: unsigned`, copied from `https://agenc.ag/@augment/agenc-store.json`). Not apex `jettoptics.ai`. Does not overwrite `/.well-known/agent-card.json`. Worker never signs. No dest/`payTo`/GtAk in this body.
 - SHIELD4 X OAuth allowlist lives in Worker secret `SHIELD4_ALLOWLIST_JSON` (fail-closed when empty)  
 - Report vulnerabilities: **joe@jettoptics.ai** (see [SECURITY.md](./SECURITY.md))  
 - On-chain upgrade authority: Squads vault `9Wss…` — see [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses)

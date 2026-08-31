@@ -485,7 +485,12 @@ export async function validateJoeToken(
   pathname: string,
   env: GatewayEnv,
 ): Promise<AuthResult> {
-  if (pathname === "/health" || pathname === "/.well-known/joe-gateway") {
+  if (
+    pathname === "/health" ||
+    pathname === "/.well-known/joe-gateway" ||
+    pathname === "/.well-known/agenc-store.json" ||
+    pathname === "/.well-known/agenc-store.json/"
+  ) {
     return { ok: true, method: "public-health", identity: "public" };
   }
 

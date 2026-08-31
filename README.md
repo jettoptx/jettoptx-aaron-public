@@ -34,7 +34,7 @@ GET https://mcp.jettoptics.ai/v?s={opaqueSessionId}
 
 ## Auth
 
-MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe/ore/rpc`, `GET /joe/ore/subscribe`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health`, `/.well-known/joe-gateway`, and `GET /specs/prima-depin-job.json`.
+MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe/ore/rpc`, `GET /joe/ore/subscribe`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health`, `/.well-known/joe-gateway`, `GET /specs/prima-depin-job.json`, and `GET /.well-known/agenc-store.json`.
 
 **Joe/mcp (Computer AddMcpServer only):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/mcp` and `/joe/mcp/sse`. Auth is **header-only** — `Authorization: Bearer` or `X-JOE-Token`. No token in the URL (`?token=` / `?key=` → `401`). Missing header → `401` (no proxy); a phone sheet cannot auth. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. **Not** Hedgehog `/mcp`. First-match before `isHedgehogPath` / `isAaronPath`.
 
@@ -72,6 +72,14 @@ Price for `prima_title` reuses live catalog `task`: `priceUsdc` 0.05 / `priceAto
 | `GET /specs/prima-depin-job.json` | **200** `application/json` | no `payTo`, no `X-Pay-To` | exact `agenc.marketplace.jobSpec` JSON |
 
 Live door: `https://aaron.jettoptics.ai/specs/prima-depin-job.json` (mirror on `mcp.jettoptics.ai`). This is the JOB-SPEC URI for agenc.ag/create — not the 402 title.
+
+**Public AgenC store manifest (not proxied, never 402, unsigned `agenc.storeManifest.v1`):**
+
+| Path | Unauth | Headers | Body |
+|------|--------|---------|------|
+| `GET /.well-known/agenc-store.json` | **200** `application/json` | no `payTo`, no `X-Pay-To` | exact hosted claim from `https://agenc.ag/@augment/agenc-store.json` (`schema: agenc.storeManifest.v1`, wallet/operator `DQbS…`, `agents: []`, `signature: null`, `status: unsigned`) |
+
+Doors: `https://mcp.jettoptics.ai/.well-known/agenc-store.json` and `https://aaron.jettoptics.ai/.well-known/agenc-store.json`. **Not** on apex `jettoptics.ai`. Does **not** overwrite `/.well-known/agent-card.json`. Worker never signs. No dest/`payTo`/GtAk in this v1 body (LOAD dest stays on `prima_title` / swarm). No LIVE listings or marketplace chrome. Fees/title/`updatedAt`/sha256 are copied from the hosted claim — not invented.
 
 SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
 
@@ -153,6 +161,7 @@ Client  →  Cloudflare Worker (this repo)
               ├── POST/GET /joe/ore/rpc + GET /joe/ore/subscribe → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
               ├── GET /specs/prima-depin-job.json → public 200 JSON (never 402; not proxied)
+              ├── GET /.well-known/agenc-store.json → public 200 agenc.storeManifest.v1 (unsigned; never 402; not proxied; not apex)
               ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
               └── /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
 ```

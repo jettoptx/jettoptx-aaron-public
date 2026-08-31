@@ -13,6 +13,7 @@
  * prima_title payTo is GtAk (astro.knots.sol). Other x402 services stay 5ct4.
  *
  * Public JOB-SPEC (edge, not proxied, never 402): GET /specs/prima-depin-job.json.
+ * Public AgenC store (edge, not proxied, never 402, unsigned): GET /.well-known/agenc-store.json.
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -28,6 +29,7 @@ import {
   isX402CatalogPath,
 } from "./x402-prima-title";
 import { handlePrimaDepinJobSpec, isPrimaDepinJobSpecPath } from "./prima-depin-job-spec";
+import { handleAgencStore, isAgencStorePath } from "./agenc-store";
 
 export default {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -44,6 +46,13 @@ export default {
       // Discord / mobile MOJO deep-link (edge-only; not proxied to origin)
       if (isMojoDeeplinkPath(url.pathname)) {
         return handleMojoDeeplink(request, env, requestId);
+      }
+
+      // GET /.well-known/agenc-store.json — public unsigned store (200 JSON).
+      // Never 402. Never payTo header. Not AARON_PATHS. Not JOE-gated. Worker never signs.
+      // First-match BEFORE isAaronPath so agent-card stays the only well-known Aaron path.
+      if (isAgencStorePath(url.pathname)) {
+        return handleAgencStore(request, env, requestId);
       }
 
       // GET /specs/prima-depin-job.json — public JOB-SPEC (200 JSON). Never 402. Never payTo.
@@ -130,7 +139,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json, /.well-known/agenc-store.json",
           requestId,
         },
         404,
