@@ -59,3 +59,13 @@ zone_name = "jettoptics.ai"
 [[routes]]
 pattern = "aaron.jettoptics.ai/specs/prima-depin-job.json/"
 zone_name = "jettoptics.ai"
+
+# Public unsigned AgenC store. Exact paths only — never 402. Not apex jettoptics.ai.
+# mcp.jettoptics.ai/* already covers the mcp host. Do not overwrite agent-card.json.
+[[routes]]
+pattern = "aaron.jettoptics.ai/.well-known/agenc-store.json"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/.well-known/agenc-store.json/"
+zone_name = "jettoptics.ai"

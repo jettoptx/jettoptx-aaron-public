@@ -14,6 +14,8 @@ export function isHedgehogPath(pathname: string): boolean {
     pathname.startsWith("/mcp/") ||
     pathname === "/health" ||
     pathname === "/.well-known/joe-gateway"
+    // Do not add /.well-known/agenc-store.json — first-match public JSON in index.ts.
+    // Do not add /.well-known/agent-card.json — Aaron origin path.
   );
 }
 
