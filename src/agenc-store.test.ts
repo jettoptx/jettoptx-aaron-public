@@ -1,7 +1,7 @@
 /**
- * Proves GET /.well-known/agenc-store.json is an unauthenticated 200 JSON door
- * (unsigned, listings [], operator DQbS, dest GtAk, shop agenc.ag/@augment).
- * Never 402. Never payTo / X-Pay-To header. Not proxied. Not AARON_PATHS.
+ * Proves GET /.well-known/agenc-store.json is unsigned agenc.storeManifest.v1
+ * copied from https://agenc.ag/@augment/agenc-store.json. Never 402.
+ * Never dest/payTo/GtAk in this body. Never payTo / X-Pay-To header.
  * GET /.well-known/agent-card.json stays origin-proxied. Apex jettoptics.ai 404s.
  * GET /x402/prima_title stays 402 to GtAk. Faucet 5ct4 services stay proxied.
  *
@@ -11,13 +11,16 @@ import worker from "./index";
 import { isAaronPath } from "./aaron-gateway";
 import type { GatewayEnv } from "./lib/cors";
 import {
-  AGENC_DEST,
   AGENC_HANDLE,
-  AGENC_OPERATOR,
-  AGENC_SHOP,
-  AGENC_SIGNER,
+  AGENC_OPERATOR_FEE_BPS,
+  AGENC_REFERRER_FEE_BPS,
+  AGENC_SIGNING_SHA256,
   AGENC_STORE_BODY,
   AGENC_STORE_PATH,
+  AGENC_STORE_SCHEMA,
+  AGENC_TITLE,
+  AGENC_UPDATED_AT,
+  AGENC_WALLET,
   isAgencStorePath,
   isApexJettopticsHost,
 } from "./agenc-store";
@@ -95,47 +98,70 @@ async function run(): Promise<void> {
   assert(isApexJettopticsHost("aaron.jettoptics.ai") === false, "aaron is not apex");
   assert(isApexJettopticsHost("mcp.jettoptics.ai") === false, "mcp is not apex");
 
+  assert(!AGENC_STORE_BODY.includes("dest"), "v1 body must not contain dest");
+  assert(!AGENC_STORE_BODY.includes("payTo"), "v1 body must not contain payTo");
+  assert(!AGENC_STORE_BODY.includes("GtAk"), "v1 body must not contain GtAk");
+  assert(!AGENC_STORE_BODY.includes("5ct4"), "v1 body must not contain 5ct4");
+  assert(!AGENC_STORE_BODY.includes("astro.knots.sol"), "v1 body must not contain astro.knots.sol");
+  assert(!AGENC_STORE_BODY.includes("listings"), "v1 body is not custom porch listings JSON");
+  assert(!AGENC_STORE_BODY.includes("shop"), "v1 body is not custom porch shop JSON");
+
   const parsed = JSON.parse(AGENC_STORE_BODY) as {
-    shop?: string;
-    handle?: string;
-    operator?: string;
-    dest?: string;
-    payTo?: string;
-    listings?: unknown;
-    signed?: boolean;
+    body?: {
+      agents?: unknown;
+      handle?: string;
+      operator?: string;
+      operatorFeeBps?: number;
+      origin?: string;
+      referrerFeeBps?: number;
+      schema?: string;
+      title?: string;
+      updatedAt?: number;
+      wallet?: string;
+      dest?: unknown;
+      payTo?: unknown;
+    };
+    wallet?: string;
     signature?: unknown;
-    signer?: string;
-    note?: string;
-    price?: unknown;
-    priceUsdc?: unknown;
+    status?: string;
+    signing?: { sha256?: string; message?: string };
+    dest?: unknown;
+    payTo?: unknown;
   };
   const keys = Object.keys(parsed);
+  assert(keys.join(",") === "body,wallet,signature,status,signing", `envelope keys ${keys.join(",")}`);
+  const bodyKeys = Object.keys(parsed.body ?? {});
   assert(
-    keys.join(",") ===
-      "shop,handle,operator,dest,payTo,listings,signed,signature,signer,note",
-    `store keys ${keys.join(",")}`,
+    bodyKeys.join(",") ===
+      "agents,handle,operator,operatorFeeBps,origin,referrerFeeBps,schema,title,updatedAt,wallet",
+    `body keys ${bodyKeys.join(",")}`,
   );
-  assert(parsed.shop === AGENC_SHOP, "shop");
-  assert(parsed.shop === "https://agenc.ag/@augment", "shop URL");
-  assert(parsed.handle === AGENC_HANDLE, "handle augment");
-  assert(parsed.operator === AGENC_OPERATOR, "operator DQbS");
-  assert(parsed.operator === PRIMA_TITLE_WALLET, "operator matches public DQbS wallet");
-  assert(parsed.dest === AGENC_DEST, "dest GtAk");
-  assert(parsed.dest === PRIMA_PAY_TO, "dest matches prima_title payTo GtAk");
-  assert(parsed.payTo === PRIMA_PAY_TO, "body payTo GtAk (swarm LOAD)");
-  assert(parsed.payTo !== FAUCET_PAY_TO, "body payTo is not faucet 5ct4");
-  assert(Array.isArray(parsed.listings) && parsed.listings.length === 0, "listings []");
-  assert(parsed.signed === false, "signed false");
+  assert(parsed.body?.schema === AGENC_STORE_SCHEMA, "schema agenc.storeManifest.v1");
+  assert(parsed.body?.handle === AGENC_HANDLE, "handle augment");
+  assert(parsed.body?.title === AGENC_TITLE, "title Jett Optics (copied)");
+  assert(parsed.body?.operator === AGENC_WALLET, "operator DQbS");
+  assert(parsed.body?.wallet === AGENC_WALLET, "body.wallet DQbS");
+  assert(parsed.wallet === AGENC_WALLET, "envelope wallet DQbS");
+  assert(parsed.wallet === PRIMA_TITLE_WALLET, "wallet matches public DQbS");
+  assert(parsed.body?.operator === PRIMA_TITLE_WALLET, "operator matches public DQbS");
+  assert(Array.isArray(parsed.body?.agents) && parsed.body?.agents.length === 0, "agents []");
+  assert(parsed.body?.operatorFeeBps === AGENC_OPERATOR_FEE_BPS, "operatorFeeBps 1000 copied");
+  assert(parsed.body?.referrerFeeBps === AGENC_REFERRER_FEE_BPS, "referrerFeeBps 500 copied");
+  assert(parsed.body?.operatorFeeBps === 1000, "operatorFeeBps is 1000");
+  assert(parsed.body?.referrerFeeBps === 500, "referrerFeeBps is 500");
+  assert(parsed.body?.origin === "", "origin empty (hosted claim)");
+  assert(parsed.body?.updatedAt === AGENC_UPDATED_AT, "updatedAt copied not invented");
   assert(parsed.signature === null, "signature null (unsigned; Worker never signs)");
-  assert(parsed.signer === AGENC_SIGNER, "signer backpack");
+  assert(parsed.status === "unsigned", "status unsigned");
+  assert(parsed.signing?.sha256 === AGENC_SIGNING_SHA256, "signing sha256 copied");
   assert(
-    parsed.note ===
-      "Send attests only after dest==GtAk on /x402/swarm or a foreign AgenC hire receipt",
-    "Send attest note",
+    parsed.signing?.message === `agenc store manifest v1\nsha256: ${AGENC_SIGNING_SHA256}`,
+    "signing message copied",
   );
+  assert(!("dest" in parsed) && !("payTo" in parsed), "envelope must not have dest/payTo");
   assert(
-    !("price" in parsed) && !("priceUsdc" in parsed) && !("sku" in parsed),
-    "store must not invent prices or extra SKUs",
+    parsed.body !== undefined && !("dest" in parsed.body) && !("payTo" in parsed.body),
+    "manifest body must not have dest/payTo",
   );
 
   installFetchMock();
@@ -152,6 +178,7 @@ async function run(): Promise<void> {
       assertNoPayHeaders(unauth, host);
       const raw = await unauth.text();
       assert(raw === AGENC_STORE_BODY, `${host} body must be byte-for-byte exact`);
+      assert(!raw.includes("dest") && !raw.includes("payTo"), `${host} response has no dest/payTo`);
     }
 
     fetchCalls = [];
@@ -251,7 +278,7 @@ async function run(): Promise<void> {
 run()
   .then(() => {
     console.log(
-      "ok: GET /.well-known/agenc-store.json is unauth 200 unsigned JSON; listings []; dest GtAk; agent-card untouched",
+      "ok: GET /.well-known/agenc-store.json is unsigned agenc.storeManifest.v1; no dest/payTo; agent-card untouched",
     );
   })
   .catch((err: unknown) => {
