@@ -73,13 +73,13 @@ Price for `prima_title` reuses live catalog `task`: `priceUsdc` 0.05 / `priceAto
 
 Live door: `https://aaron.jettoptics.ai/specs/prima-depin-job.json` (mirror on `mcp.jettoptics.ai`). This is the JOB-SPEC URI for agenc.ag/create — not the 402 title.
 
-**Public AgenC store document (not proxied, never 402, unsigned):**
+**Public AgenC store manifest (not proxied, never 402, unsigned `agenc.storeManifest.v1`):**
 
 | Path | Unauth | Headers | Body |
 |------|--------|---------|------|
-| `GET /.well-known/agenc-store.json` | **200** `application/json` | no `payTo`, no `X-Pay-To` | shop `https://agenc.ag/@augment`, handle `augment`, operator `DQbS…`, dest/`payTo` `GtAk…` (`astro.knots.sol`), `listings: []`, `signed: false`, `signature: null`, `signer: backpack` |
+| `GET /.well-known/agenc-store.json` | **200** `application/json` | no `payTo`, no `X-Pay-To` | exact hosted claim from `https://agenc.ag/@augment/agenc-store.json` (`schema: agenc.storeManifest.v1`, wallet/operator `DQbS…`, `agents: []`, `signature: null`, `status: unsigned`) |
 
-Doors: `https://mcp.jettoptics.ai/.well-known/agenc-store.json` and `https://aaron.jettoptics.ai/.well-known/agenc-store.json`. **Not** on apex `jettoptics.ai`. Does **not** overwrite `/.well-known/agent-card.json`. Worker never signs and never holds a key — Josh signs in Backpack later. No LIVE listings, marketplace chrome, or invented SKUs. Send attests only after dest==GtAk on `/x402/swarm` or a foreign AgenC hire receipt.
+Doors: `https://mcp.jettoptics.ai/.well-known/agenc-store.json` and `https://aaron.jettoptics.ai/.well-known/agenc-store.json`. **Not** on apex `jettoptics.ai`. Does **not** overwrite `/.well-known/agent-card.json`. Worker never signs. No dest/`payTo`/GtAk in this v1 body (LOAD dest stays on `prima_title` / swarm). No LIVE listings or marketplace chrome. Fees/title/`updatedAt`/sha256 are copied from the hosted claim — not invented.
 
 SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
 
@@ -161,7 +161,7 @@ Client  →  Cloudflare Worker (this repo)
               ├── POST/GET /joe/ore/rpc + GET /joe/ore/subscribe → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
               ├── GET /specs/prima-depin-job.json → public 200 JSON (never 402; not proxied)
-              ├── GET /.well-known/agenc-store.json → public 200 unsigned JSON (never 402; not proxied; not apex)
+              ├── GET /.well-known/agenc-store.json → public 200 agenc.storeManifest.v1 (unsigned; never 402; not proxied; not apex)
               ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
               └── /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
 ```

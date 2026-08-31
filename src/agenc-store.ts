@@ -1,9 +1,16 @@
 /**
- * Public AgenC store document (unsigned).
+ * Public unsigned agenc.storeManifest.v1 (AgenC verifier door).
  *
  * GET /.well-known/agenc-store.json — unauthenticated HTTP 200 application/json.
+ * Body is the hosted claim copied exactly from
+ * https://agenc.ag/@augment/agenc-store.json — do not invent bps, titles,
+ * timestamps, or sha256. Custom porch JSON must not live on this path.
+ *
  * Never 402. Never attach payTo or X-Pay-To headers. Not proxied. Not AARON_PATHS.
- * Not JOE-gated. Worker never signs and never holds a key — Josh signs in Backpack later.
+ * Not JOE-gated. Worker never signs and never holds a key. signature stays null.
+ *
+ * Do not put dest, payTo, GtAk, 5ct4, or astro.knots.sol in this v1 body.
+ * GtAk stays LOAD dest elsewhere (prima_title / swarm), not the store claim.
  *
  * Served on mcp.jettoptics.ai and aaron.jettoptics.ai only. Not apex jettoptics.ai.
  * Does not overwrite /.well-known/agent-card.json.
@@ -14,30 +21,29 @@ import { getCorsHeaders, jsonResponse } from "./lib/cors";
 
 export const AGENC_STORE_PATH = "/.well-known/agenc-store.json";
 
-/** Public AgenC shop URL (hosted handle). */
-export const AGENC_SHOP = "https://agenc.ag/@augment";
+/** Hosted claim source. Do not rewrite fields from this URL. */
+export const AGENC_HOSTED_CLAIM_URL = "https://agenc.ag/@augment/agenc-store.json";
 
-/** Public handle. Same as prima_title handle. */
+export const AGENC_STORE_SCHEMA = "agenc.storeManifest.v1";
 export const AGENC_HANDLE = "augment";
+export const AGENC_TITLE = "Jett Optics";
 
-/** AgenC operator wallet (public-only). Same as prima_title wallet DQbS. */
-export const AGENC_OPERATOR = "DQbSfPspQS2JW2EqrZcFF5KgaYZBruFJxmwhSzvTkuMU";
+/** AgenC operator / wallet (public-only). Same DQbS as prima_title wallet. */
+export const AGENC_WALLET = "DQbSfPspQS2JW2EqrZcFF5KgaYZBruFJxmwhSzvTkuMU";
+
+/** Copied from hosted claim — do not invent. */
+export const AGENC_OPERATOR_FEE_BPS = 1000;
+export const AGENC_REFERRER_FEE_BPS = 500;
+export const AGENC_UPDATED_AT = 1787030092;
+export const AGENC_SIGNING_SHA256 =
+  "be2f721d009d547877980a25bcf6799528608f9e8a9486fac6b1002b880c0159";
 
 /**
- * dest / payTo / swarm LOAD (astro.knots.sol).
- * Same as prima_title payTo. Never faucet 5ct4.
- */
-export const AGENC_DEST = "GtAkS5tYaqi6XQrinuFyqKQkK29SFQsUY9gQ2XpLXLwq";
-
-/** Josh signs later in Backpack. This Worker never signs. */
-export const AGENC_SIGNER = "backpack";
-
-/**
- * Exact bytes for the public store document. Do not reword, add SKUs, prices,
- * or pretty-print. listings stays empty. Signature fields stay unsigned.
+ * Exact bytes of https://agenc.ag/@augment/agenc-store.json.
+ * Do not reword, pretty-print, or add dest/payTo/listings. Worker never signs.
  */
 export const AGENC_STORE_BODY =
-  '{"shop":"https://agenc.ag/@augment","handle":"augment","operator":"DQbSfPspQS2JW2EqrZcFF5KgaYZBruFJxmwhSzvTkuMU","dest":"GtAkS5tYaqi6XQrinuFyqKQkK29SFQsUY9gQ2XpLXLwq","payTo":"GtAkS5tYaqi6XQrinuFyqKQkK29SFQsUY9gQ2XpLXLwq","listings":[],"signed":false,"signature":null,"signer":"backpack","note":"Send attests only after dest==GtAk on /x402/swarm or a foreign AgenC hire receipt"}';
+  '{"body":{"agents":[],"handle":"augment","operator":"DQbSfPspQS2JW2EqrZcFF5KgaYZBruFJxmwhSzvTkuMU","operatorFeeBps":1000,"origin":"","referrerFeeBps":500,"schema":"agenc.storeManifest.v1","title":"Jett Optics","updatedAt":1787030092,"wallet":"DQbSfPspQS2JW2EqrZcFF5KgaYZBruFJxmwhSzvTkuMU"},"wallet":"DQbSfPspQS2JW2EqrZcFF5KgaYZBruFJxmwhSzvTkuMU","signature":null,"status":"unsigned","signing":{"sha256":"be2f721d009d547877980a25bcf6799528608f9e8a9486fac6b1002b880c0159","message":"agenc store manifest v1\\nsha256: be2f721d009d547877980a25bcf6799528608f9e8a9486fac6b1002b880c0159"}}';
 
 export function isAgencStorePath(pathname: string): boolean {
   return pathname === AGENC_STORE_PATH || pathname === `${AGENC_STORE_PATH}/`;
