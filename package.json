@@ -10,7 +10,7 @@
     "tail": "wrangler tail",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/jettchat-census.test.ts && tsx src/joe-hedgehog.test.ts && tsx src/joe-mcp.test.ts && tsx src/joe-ore.test.ts && tsx src/x402-prima-title.test.ts && tsx src/prima-depin-job-spec.test.ts"
+    "test": "tsx src/jettchat-census.test.ts && tsx src/joe-hedgehog.test.ts && tsx src/joe-mcp.test.ts && tsx src/joe-ore.test.ts && tsx src/x402-prima-title.test.ts && tsx src/prima-depin-job-spec.test.ts && tsx src/mcp-oauth.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250611.0",

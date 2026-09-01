@@ -2,7 +2,7 @@
  * JOE-issued API token gate — validates MCP credentials before HEDGEHOG handlers run.
  *
  * Accepted credentials (headers only — never query-string `?key=`):
- *   - Authorization: Bearer <MCP_API_KEY | SpacetimeDB key | X OAuth access token>
+ *   - Authorization: Bearer <MCP_API_KEY | SpacetimeDB key | X OAuth access token | MCP OAuth access token>
  *   - X-JOE-Token: <MCP_API_KEY | SpacetimeDB key>
  *
  * X OAuth identities come from Worker secret `SHIELD4_ALLOWLIST_JSON` (parsed at runtime).
@@ -14,12 +14,13 @@
  */
 
 import type { GatewayEnv } from "./cors";
+import { verifyMcpOAuthAccessToken } from "./mcp-oauth";
 
 export interface AuthResult {
   ok: boolean;
   error?: string;
   identity?: string;
-  method?: "bearer" | "api-key" | "db-key" | "x-oauth" | "public-health";
+  method?: "bearer" | "api-key" | "db-key" | "x-oauth" | "public-health" | "mcp-oauth";
   keyId?: number;
   xUsername?: string;
   tier?: BillingTier;
@@ -506,6 +507,9 @@ export async function validateJoeToken(
       };
     }
 
+    const mcpOAuth = await verifyMcpOAuthAccessToken(token, request.url, env);
+    if (mcpOAuth?.ok) return mcpOAuth;
+
     if (spacetimeUrl) {
       const dbKey = await validateKeyAgainstDB(token, spacetimeUrl, env);
       if (dbKey) {
@@ -559,6 +563,6 @@ export async function validateJoeToken(
   return {
     ok: false,
     error:
-      "Unauthorized — JOE API token required. Provide Authorization: Bearer or X-JOE-Token (MCP API key, SpacetimeDB key, or X OAuth Bearer). Issue keys at jettoptx.chat/support.",
+      "Unauthorized — JOE API token required. Provide Authorization: Bearer or X-JOE-Token (MCP API key, SpacetimeDB key, X OAuth Bearer, or MCP OAuth access token). Issue keys at jettoptx.chat/support. SuperGrok: complete MCP OAuth against this porch.",
   };
 }

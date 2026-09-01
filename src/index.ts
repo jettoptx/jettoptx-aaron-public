@@ -20,6 +20,14 @@ import { getCorsHeaders, addRequestId, jsonResponse } from "./lib/cors";
 import { validateJoeToken } from "./lib/auth-gate";
 import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath, isJoeOrePath, proxyToAaron } from "./aaron-gateway";
 import { isHedgehogPath, handleHedgehog, isJettchatCensusPath } from "./hedgehog-mcp";
+import {
+  asHedgehogMcpRequest,
+  handleMcpOAuthDiscovery,
+  handleMcpOAuthProtocol,
+  hedgehogUnauthorized,
+  isMcpOAuthDiscoveryPath,
+  isMcpOAuthProtocolPath,
+} from "./lib/mcp-oauth";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
 import {
   handlePrimaTitle,
@@ -61,6 +69,16 @@ export default {
         return handleX402Catalog(request, env, requestId);
       }
 
+      // MCP OAuth 2.1 discovery (RFC 9728 / RFC 8414). Public. Never overwrite agent-card.
+      if (isMcpOAuthDiscoveryPath(url.pathname)) {
+        return handleMcpOAuthDiscovery(request, env, requestId);
+      }
+
+      // MCP OAuth authorize / token / DCR (Cloudflare Agents MCP OAuth wire format).
+      if (isMcpOAuthProtocolPath(url.pathname)) {
+        return handleMcpOAuthProtocol(request, env, requestId, validateJoeToken);
+      }
+
       // GET/POST /joe/mcp — Computer AddMcpServer door (header auth only).
       // First-match BEFORE isHedgehogPath and isAaronPath. Not AARON_PATHS. Not Hedgehog /mcp.
       if (
@@ -75,13 +93,18 @@ export default {
         return proxyToAaron(request, env, requestId);
       }
 
-      // POST/GET /joe/hedgehog — JOE-gated MCP transport proxy to AARON_ORIGIN.
+      // POST/GET /joe/hedgehog — SuperGrok porch + Computer JOE-token path.
+      // Unauth is 401 + WWW-Authenticate (MCP OAuth discovery). Never 404, never public tools.
+      // JOE Bearer / X-JOE-Token still proxies to AARON_ORIGIN (stdio/computer).
+      // MCP OAuth access token serves local HEDGEHOG handlers (same tools as /mcp).
       // First-match BEFORE isHedgehogPath and isAaronPath. Not AARON_PATHS. Not /mcp/*.
       if (isJoeHedgehogPath(url.pathname)) {
         const auth = await validateJoeToken(request, url.pathname, env);
         if (!auth.ok) {
-          const cors = getCorsHeaders(request, env);
-          return jsonResponse({ error: auth.error, requestId }, 401, cors, requestId);
+          return hedgehogUnauthorized(request, env, requestId, auth.error ?? "Unauthorized");
+        }
+        if (auth.method === "mcp-oauth") {
+          return handleHedgehog(asHedgehogMcpRequest(request), env, requestId);
         }
         return proxyToAaron(request, env, requestId);
       }
@@ -130,7 +153,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json, /.well-known/oauth-protected-resource",
           requestId,
         },
         404,

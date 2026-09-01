@@ -23,6 +23,8 @@ CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jet
 #   CF_ACCESS_CLIENT_ID      — optional; Cloudflare Access service token (with SECRET below)
 #   CF_ACCESS_CLIENT_SECRET  — optional; both required for Access headers on SpacetimeDB fetches
 #   XAI_API_KEY              — optional; prefer keeping model keys on origin AARON
+# MCP OAuth 2.1 for SuperGrok /joe/hedgehog is stateless HMAC using MCP_API_KEY.
+# Do not add X client secrets or mesh keys here. Do not enable Helius on this Worker.
 
 [limits]
 cpu_ms = 300_000

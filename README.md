@@ -34,11 +34,17 @@ GET https://mcp.jettoptics.ai/v?s={opaqueSessionId}
 
 ## Auth
 
-MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe/ore/rpc`, `GET /joe/ore/subscribe`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health`, `/.well-known/joe-gateway`, and `GET /specs/prima-depin-job.json`.
+MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe/ore/rpc`, `GET /joe/ore/subscribe`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`. Public without a token: `/health`, `/.well-known/joe-gateway`, `GET /specs/prima-depin-job.json`, and MCP OAuth discovery (`/.well-known/oauth-protected-resource`, `/.well-known/oauth-authorization-server`, `/authorize`, `/oauth/register`, `/oauth/token`).
 
 **Joe/mcp (Computer AddMcpServer only):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/mcp` and `/joe/mcp/sse`. Auth is **header-only** — `Authorization: Bearer` or `X-JOE-Token`. No token in the URL (`?token=` / `?key=` → `401`). Missing header → `401` (no proxy); a phone sheet cannot auth. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. **Not** Hedgehog `/mcp`. First-match before `isHedgehogPath` / `isAaronPath`.
 
-**Joe/hedgehog MCP transport:** `POST`/`GET` `https://mcp.jettoptics.ai/joe/hedgehog` (optional trailing slash; SSE sibling `/joe/hedgehog/sse`) with `Authorization: Bearer` or `X-JOE-Token` (same `validateJoeToken` as `/mcp`). Missing or wrong token → `401` (no proxy). On success the Worker `proxyToAaron` to `AARON_ORIGIN` — this path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, and is **not** proxied to Hedgehog `:8811`. First-match before `isHedgehogPath` / `isAaronPath` so `/mcp/*` cannot swallow it. The Worker does not implement MCP tools or run SQL.
+**Joe/hedgehog MCP transport (SuperGrok reconnect URL):** `POST`/`GET` `https://mcp.jettoptics.ai/joe/hedgehog` (optional trailing slash; SSE sibling `/joe/hedgehog/sse`).
+
+- **Computer / stdio:** `Authorization: Bearer` or `X-JOE-Token` (same `validateJoeToken` as `/mcp`). On success the Worker `proxyToAaron` to `AARON_ORIGIN`.
+- **SuperGrok phone sheet:** OAuth-only — it cannot send a JOE-token header. Unauth GET/POST stays **`401` (never 404, never public tools)** and **MUST** include `WWW-Authenticate` with `resource_metadata` pointing at `https://mcp.jettoptics.ai/.well-known/oauth-protected-resource/joe/hedgehog`. After a valid MCP OAuth access token, `tools/list` is served by the existing HEDGEHOG handlers (same five tools as authenticated `GET/POST https://mcp.jettoptics.ai/mcp`: `hedgehog_health`, `jett_augment_status`, `jett_docs_search`, `jett_augment_lookup`, `jett_edge_diagnose`).
+- Not in ungated `AARON_PATHS`. Not the JettChat census. Not Hedgehog `:8811`. First-match before `isHedgehogPath` / `isAaronPath`.
+
+**DRAFT — Aaron reviews before LIVE.** SuperGrok reconnect URL: `https://mcp.jettoptics.ai/joe/hedgehog`. Do not merge until Aaron signs off.
 
 **Joe/ore (ORE / AgenC porch):** live doors match origin joe-aaron-router — `POST`/`GET` `https://mcp.jettoptics.ai/joe/ore/rpc` and `GET` `https://mcp.jettoptics.ai/joe/ore/subscribe` (SSE summaries; optional trailing slashes). Also first-matches `/joe/ore` and `/joe/ore/sse`. Auth is the same `validateJoeToken` as `/joe/hedgehog` (`Authorization: Bearer` or `X-JOE-Token`). Missing or wrong token → **`401` (never 404, no proxy)**. On success the Worker `proxyToAaron` with the **original path** (`/joe/ore/rpc` → origin `/joe/ore/rpc`). **Not** in ungated `AARON_PATHS`. Explicit path list only — `/joe/ore/extra` is not this door. This Worker has **no Helius** — do not set `HELIUS_API_KEY`, a `SOLANA_RPC_URL` with an api-key, or a new `HELIUS_MAINNET_RPC` here. Paid Helius/gRPC subscribe for program `oreV3EG1i9BEgiAJ8b177Z2S2rMarzak4NMv1kULvWv` stays on **joe-aaron-router** (`AARON_ORIGIN`). First-match before `isHedgehogPath` / `isAaronPath`.
 
@@ -49,6 +55,7 @@ MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe
 | Static admin key (`MCP_API_KEY` Worker secret) | `Authorization: Bearer` or `X-JOE-Token` | Accept (spaceCowboy tier) |
 | SpacetimeDB `jtx_api_key` | `Authorization: Bearer` or `X-JOE-Token` | Hash lookup via SpacetimeDB HTTP SQL |
 | X OAuth access token | `Authorization: Bearer` only | Map username → `SHIELD4_ALLOWLIST_JSON` + billing gate |
+| MCP OAuth access token (SuperGrok) | `Authorization: Bearer` only | HMAC-signed token from this Worker’s `/authorize` + `/oauth/token` (JOE credential required at authorize) |
 
 **X OAuth allowlist:** set Worker secret `SHIELD4_ALLOWLIST_JSON` to a JSON object keyed by X username (lowercase), e.g. `{"example_user":{"twinId":"example_user","wallet":"…","founderBypass":false}}`. Empty, unset, or invalid JSON fails closed for X OAuth only — `MCP_API_KEY` and SpacetimeDB keys continue to work. Do not commit real wallets or emails.
 
@@ -149,7 +156,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for edge planes, client stack, and secu
 ```text
 Client  →  Cloudflare Worker (this repo)
               ├── GET/POST /joe/mcp → JOE header gate → proxy → AARON_ORIGIN (AddMcpServer; not AARON_PATHS)
-              ├── POST/GET /joe/hedgehog → JOE token gate → proxy → AARON_ORIGIN (not AARON_PATHS)
+              ├── POST/GET /joe/hedgehog → 401+WWW-Authenticate / JOE token → proxy AARON / MCP OAuth → HEDGEHOG tools
               ├── POST/GET /joe/ore/rpc + GET /joe/ore/subscribe → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
               ├── GET /specs/prima-depin-job.json → public 200 JSON (never 402; not proxied)

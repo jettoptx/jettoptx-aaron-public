@@ -87,7 +87,30 @@ async function run(): Promise<void> {
       ctx,
     );
     assert(missing.status === 401, `missing token → 401, got ${missing.status}`);
+    assert(missing.status !== 404, "unauth /joe/hedgehog must never 404");
+    const www = missing.headers.get("WWW-Authenticate") ?? "";
+    assert(www.startsWith("Bearer "), `401 WWW-Authenticate must be Bearer, got ${www}`);
+    assert(
+      www.includes("resource_metadata="),
+      `401 WWW-Authenticate must point at OAuth protected-resource metadata, got ${www}`,
+    );
+    assert(
+      www.includes("/.well-known/oauth-protected-resource/joe/hedgehog"),
+      `resource_metadata must be the hedgehog porch document, got ${www}`,
+    );
     assert(fetchCalls.length === 0, "missing token must not proxy or count");
+
+    const missingGet = await worker.fetch(
+      new Request("https://mcp.jettoptics.ai/joe/hedgehog", { method: "GET" }),
+      env,
+      ctx,
+    );
+    assert(missingGet.status === 401, `unauth GET /joe/hedgehog → 401, got ${missingGet.status}`);
+    assert(missingGet.status !== 404, "unauth GET /joe/hedgehog must never 404");
+    assert(
+      (missingGet.headers.get("WWW-Authenticate") ?? "").includes("resource_metadata="),
+      "unauth GET must also advertise resource_metadata",
+    );
 
     const wrong = await worker.fetch(
       new Request("https://mcp.jettoptics.ai/joe/hedgehog", {

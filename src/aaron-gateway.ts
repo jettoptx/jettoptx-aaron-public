@@ -16,6 +16,7 @@ const AARON_PATHS = [
   "/x402",
   "/orphan",
   "/.well-known/agent-card.json",
+  // Do not overwrite agent-card. MCP OAuth well-known lives on the Worker (index.ts).
   // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
