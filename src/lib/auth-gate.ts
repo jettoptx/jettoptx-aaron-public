@@ -14,6 +14,7 @@
  */
 
 import type { GatewayEnv } from "./cors";
+import { looksLikeMcpOauthJwt } from "./mcp-oauth";
 
 export interface AuthResult {
   ok: boolean;
@@ -495,6 +496,14 @@ export async function validateJoeToken(
   const authHeader = request.headers.get("Authorization") ?? "";
   if (authHeader.startsWith("Bearer ")) {
     const token = authHeader.slice(7);
+    // SuperGrok public-MCP JWTs are not JOE keys and must not be sent to X or SpacetimeDB.
+    if (looksLikeMcpOauthJwt(token)) {
+      return {
+        ok: false,
+        error:
+          "SuperGrok OAuth tokens only authorize the public MCP tools at /joe/hedgehog and /mcp — not this path.",
+      };
+    }
 
     if (mcpApiKey && token === mcpApiKey) {
       return {
