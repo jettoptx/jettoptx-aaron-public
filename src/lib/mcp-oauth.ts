@@ -130,6 +130,8 @@ export async function handleMcpOauthRequest(
   cors.set("X-Request-ID", requestId);
   cors.set("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id, X-Request-ID");
 
+  cors.set("Cache-Control", "no-store");
+
   if (isMcpOauthDiscoveryPath(url.pathname)) {
     return discoveryResponse(url, cors, requestId);
   }
@@ -189,6 +191,8 @@ function authorizationServerMetadata(origin: string): Record<string, unknown> {
     token_endpoint_auth_methods_supported: ["none", "client_secret_post", "client_secret_basic"],
     code_challenge_methods_supported: ["S256"],
     response_modes_supported: ["query"],
+    // MCP 2026 clients (SuperGrok) prefer CIMD over DCR.
+    client_id_metadata_document_supported: true,
   };
 }
 
@@ -495,6 +499,83 @@ interface AuthorizeErr {
   description: string;
 }
 
+const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[::1\]|::1)/i;
+
+export function urlHasCredentialQuery(url: URL): boolean {
+  return (
+    url.searchParams.has("key") ||
+    url.searchParams.has("token") ||
+    url.searchParams.has("access_token") ||
+    url.searchParams.has("joe")
+  );
+}
+
+interface RegisteredClient {
+  name: string;
+  uris: string[];
+}
+
+async function resolveRegisteredClient(
+  clientId: string,
+  env: GatewayEnv,
+  origin: string,
+): Promise<RegisteredClient | null> {
+  if (clientId.startsWith("https://")) {
+    return fetchCimdClient(clientId);
+  }
+  const client = await verifyJwt(clientId, env, origin);
+  if (!client || client.typ !== "oauth-client") return null;
+  const uris = Array.isArray(client.uris)
+    ? client.uris.filter((u): u is string => typeof u === "string")
+    : [];
+  return {
+    name: typeof client.name === "string" ? client.name : "MCP client",
+    uris,
+  };
+}
+
+/** RFC CIMD — client_id is an https URL SuperGrok hosts. Never follow to private nets. */
+async function fetchCimdClient(clientId: string): Promise<RegisteredClient | null> {
+  let parsed: URL;
+  try {
+    parsed = new URL(clientId);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "https:") return null;
+  if (PRIVATE_HOST.test(parsed.hostname)) return null;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 3_000);
+  try {
+    const res = await fetch(clientId, {
+      method: "GET",
+      redirect: "manual",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (res.status !== 200) return null;
+    const text = await res.text();
+    if (text.length > 16_384) return null;
+    const doc = JSON.parse(text) as {
+      client_id?: string;
+      client_name?: string;
+      redirect_uris?: unknown;
+    };
+    if (doc.client_id !== clientId) return null;
+    const uris = normalizeRedirectUris(doc.redirect_uris);
+    if (uris.length === 0) return null;
+    return {
+      name: (typeof doc.client_name === "string" ? doc.client_name : "SuperGrok").slice(0, 80),
+      uris,
+    };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function parseAuthorizeParams(
   params: URLSearchParams,
   env: GatewayEnv,
@@ -523,12 +604,15 @@ async function parseAuthorizeParams(
     return { ok: false, error: "invalid_request", description: "redirect_uri is not allowed" };
   }
 
-  const client = await verifyJwt(clientId, env, origin);
-  if (!client || client.typ !== "oauth-client") {
-    return { ok: false, error: "invalid_client", description: "Unknown client_id — register via POST /oauth/register" };
+  const registered = await resolveRegisteredClient(clientId, env, origin);
+  if (!registered) {
+    return {
+      ok: false,
+      error: "invalid_client",
+      description: "Unknown client_id — use a Client ID Metadata Document (https URL) or POST /oauth/register",
+    };
   }
-  const uris = Array.isArray(client.uris) ? client.uris.filter((u): u is string => typeof u === "string") : [];
-  if (!uris.includes(redirectUri)) {
+  if (!registered.uris.includes(redirectUri)) {
     return { ok: false, error: "invalid_request", description: "redirect_uri is not registered for this client" };
   }
 
@@ -540,7 +624,7 @@ async function parseAuthorizeParams(
   return {
     ok: true,
     clientId,
-    clientName: typeof client.name === "string" ? client.name : "MCP client",
+    clientName: registered.name,
     redirectUri,
     codeChallenge: challenge,
     codeChallengeMethod: "S256",

@@ -34,13 +34,15 @@ GET https://mcp.jettoptics.ai/v?s={opaqueSessionId}
 
 ## SuperGrok (phone custom connector)
 
-Paste this URL in SuperGrok — OAuth only, no JOE token header:
+Paste this URL in SuperGrok — OAuth only, no JOE token header, **no query-string key**:
 
 ```text
 https://mcp.jettoptics.ai/joe/hedgehog
 ```
 
-The phone sheet cannot send `X-JOE-Token`. After SuperGrok completes OAuth (PKCE + consent), `tools/list` returns the public 5 tools implemented on this Worker:
+Do not use `jettoptx.chat/api/mcp/hedgehog` (that host 301s and is not this porch). Do not put `?key=` / `?token=` on the Server URL.
+
+The phone sheet cannot send `X-JOE-Token`. After SuperGrok completes OAuth (CIMD or DCR + PKCE + consent), `tools/list` returns the public 5 tools implemented on this Worker:
 
 `hedgehog_health` · `jett_augment_status` · `jett_docs_search` · `jett_augment_lookup` · `jett_edge_diagnose`
 

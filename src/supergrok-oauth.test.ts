@@ -225,6 +225,13 @@ async function run(): Promise<void> {
     };
     assert(asBody.registration_endpoint === `${ORIGIN}/oauth/register`, "DCR endpoint advertised");
     assert(asBody.code_challenge_methods_supported?.includes("S256"), "PKCE S256");
+    assert(
+      (asBody as { client_id_metadata_document_supported?: boolean })
+        .client_id_metadata_document_supported === true,
+      "CIMD advertised for SuperGrok",
+    );
+    assert(as.status < 300, "AS metadata must not 301");
+    assert(rs.status < 300, "PRM must not 301");
 
     const pathRs = await worker.fetch(
       new Request(`${ORIGIN}/joe/hedgehog/.well-known/oauth-protected-resource`),
@@ -332,6 +339,126 @@ async function run(): Promise<void> {
       ctx,
     );
     assert(queryToken.status === 401, "OAuth token in the query string is rejected");
+    const queryBody = await queryToken.text();
+    assert(!queryBody.includes(access), "must not echo a query-string credential");
+    assert(queryToken.status !== 301 && queryToken.status !== 302, "MCP porch must not 301");
+
+    const leaked = "do-not-echo-this-query-secret";
+    const queryKey = await worker.fetch(
+      new Request(`${MCP_URL}?key=${leaked}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+      }),
+      env,
+      ctx,
+    );
+    assert(queryKey.status === 401, "query-string key is rejected");
+    const keyBody = await queryKey.text();
+    assert(!keyBody.includes(leaked), "must not echo query-string key");
+    assert((queryKey.headers.get("WWW-Authenticate") ?? "").includes("resource_metadata="), "OAuth challenge on query-key 401");
+
+    const slash = await worker.fetch(
+      new Request(`${MCP_URL}/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" }),
+      }),
+      env,
+      ctx,
+    );
+    assert(slash.status === 401, `trailing slash is 401 not redirect, got ${slash.status}`);
+    assert(!slash.headers.get("Location"), "no Location on /joe/hedgehog/");
+
+    const cimdUrl = "https://oauth.example.test/supergrok-client.json";
+    const cimdRedirect = "https://grok.com/oauth/callback";
+    const { verifier: cimdVerifier, challenge: cimdChallenge } = await pkce();
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      if (url === cimdUrl) {
+        return new Response(
+          JSON.stringify({
+            client_id: cimdUrl,
+            client_name: "SuperGrok",
+            redirect_uris: [cimdRedirect],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return previousFetch(input, init);
+    }) as typeof fetch;
+    const cimdAuth = new URL(`${ORIGIN}/oauth/authorize`);
+    cimdAuth.searchParams.set("response_type", "code");
+    cimdAuth.searchParams.set("client_id", cimdUrl);
+    cimdAuth.searchParams.set("redirect_uri", cimdRedirect);
+    cimdAuth.searchParams.set("code_challenge", cimdChallenge);
+    cimdAuth.searchParams.set("code_challenge_method", "S256");
+    cimdAuth.searchParams.set("resource", MCP_URL);
+    const cimdConsent = await worker.fetch(new Request(cimdAuth.toString()), env, ctx);
+    assert(cimdConsent.status === 200, `CIMD consent → 200, got ${cimdConsent.status}`);
+    const cimdHtml = await cimdConsent.text();
+    assert(cimdHtml.includes("SuperGrok"), "CIMD client_name on consent");
+    const cimdCsrf = cookieFrom(cimdConsent);
+    const cimdApproved = await worker.fetch(
+      new Request(`${ORIGIN}/oauth/authorize`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cimdCsrf },
+        body: new URLSearchParams({
+          csrf_token: cimdCsrf.split("=")[1],
+          approve: "1",
+          client_id: cimdUrl,
+          redirect_uri: cimdRedirect,
+          code_challenge: cimdChallenge,
+          code_challenge_method: "S256",
+          resource: MCP_URL,
+          response_type: "code",
+        }).toString(),
+      }),
+      env,
+      ctx,
+    );
+    assert(cimdApproved.status === 302, `CIMD approve → 302, got ${cimdApproved.status}`);
+    const cimdLoc = cimdApproved.headers.get("Location") ?? "";
+    assert(cimdLoc.startsWith(`${cimdRedirect}?`), "CIMD redirects to SuperGrok callback");
+    const cimdCode = new URL(cimdLoc).searchParams.get("code");
+    assert(cimdCode, "CIMD authorization code");
+    const cimdToken = await worker.fetch(
+      new Request(`${ORIGIN}/oauth/token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          grant_type: "authorization_code",
+          code: cimdCode,
+          redirect_uri: cimdRedirect,
+          client_id: cimdUrl,
+          code_verifier: cimdVerifier,
+          resource: MCP_URL,
+        }).toString(),
+      }),
+      env,
+      ctx,
+    );
+    assert(cimdToken.status === 200, `CIMD token → 200, got ${cimdToken.status}`);
+    const cimdAccess = ((await cimdToken.json()) as { access_token?: string }).access_token;
+    assert(cimdAccess, "CIMD access_token");
+    const cimdList = await worker.fetch(
+      new Request(MCP_URL, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${cimdAccess}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/list" }),
+      }),
+      env,
+      ctx,
+    );
+    const cimdTools = ((await cimdList.json()) as { result?: { tools?: Array<{ name: string }> } })
+      .result?.tools ?? [];
+    assert(cimdTools.length === 5, `CIMD tools/list → 5, got ${cimdTools.length}`);
   } finally {
     restoreFetch();
   }

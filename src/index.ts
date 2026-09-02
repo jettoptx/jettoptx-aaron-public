@@ -28,6 +28,7 @@ import {
   isPublicOAuthMcpPath,
   looksLikeMcpOauthJwt,
   mcpOauthChallengeHeaders,
+  urlHasCredentialQuery,
   verifyMcpAccessToken,
 } from "./lib/mcp-oauth";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
@@ -214,6 +215,20 @@ function unauthorizedPublicMcp(
   const cors = getCorsHeaders(request, env);
   const origin = new URL(request.url).origin;
   cors.set("WWW-Authenticate", mcpOauthChallengeHeaders(origin, resourcePath));
+  cors.set("Cache-Control", "no-store");
+  const reqUrl = new URL(request.url);
+  if (urlHasCredentialQuery(reqUrl)) {
+    return jsonResponse(
+      {
+        error:
+          "Unauthorized — do not put tokens in the URL. Paste https://mcp.jettoptics.ai/joe/hedgehog and complete SuperGrok OAuth.",
+        requestId,
+      },
+      401,
+      cors,
+      requestId,
+    );
+  }
   return jsonResponse(
     {
       error:
