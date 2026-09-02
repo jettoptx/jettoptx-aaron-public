@@ -26,6 +26,11 @@ export interface GatewayEnv {
   SHIELD4_ALLOWLIST_JSON?: string;
   /** Helius mainnet RPC for WEALTH8 JTX / NFT checks */
   HELIUS_MAINNET_RPC?: string;
+  /**
+   * Optional HMAC material for SuperGrok MCP OAuth JWTs.
+   * If unset, signing derives from MCP_API_KEY. Never commit a value.
+   */
+  MCP_OAUTH_SIGNING_KEY?: string;
 }
 
 const ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";
@@ -51,7 +56,8 @@ export function getCorsHeaders(request: Request, env: GatewayEnv): Headers {
     "Access-Control-Allow-Origin": allowOrigin,
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
     "Access-Control-Allow-Headers":
-      "Content-Type, Authorization, X-Request-ID, X-JOE-Token, CF-Access-Client-Id, CF-Access-Client-Secret, X-PAYMENT, PAYMENT-SIGNATURE, x-payment",
+      "Content-Type, Authorization, X-Request-ID, X-JOE-Token, CF-Access-Client-Id, CF-Access-Client-Secret, X-PAYMENT, PAYMENT-SIGNATURE, x-payment, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID",
+    "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id, X-Request-ID",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   });

@@ -1,7 +1,8 @@
 /**
  * jettoptx-aaron-hedgehog — Gated edge gateway for AARON + HEDGEHOG MCP
  *
- * JOE-issued API tokens required for MCP (issue at jettoptx.chat/support).
+ * JOE-issued API tokens required for computer MCP doors (issue at jettoptx.chat/support).
+ * SuperGrok phone connectors use OAuth at /joe/hedgehog (public 5 tools; no JOE token paste).
  * AARON paths: attestation, gaze verify, handshake, x402 payable JOE APIs.
  * HEDGEHOG paths: MCP tools, Grok proxy to Jetson :8811.
  *
@@ -19,7 +20,17 @@ import type { GatewayEnv } from "./lib/cors";
 import { getCorsHeaders, addRequestId, jsonResponse } from "./lib/cors";
 import { validateJoeToken } from "./lib/auth-gate";
 import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath, isJoeOrePath, proxyToAaron } from "./aaron-gateway";
-import { isHedgehogPath, handleHedgehog, isJettchatCensusPath } from "./hedgehog-mcp";
+import { isHedgehogPath, handleHedgehog, handleMcpSession, isJettchatCensusPath } from "./hedgehog-mcp";
+import {
+  handleMcpOauthRequest,
+  isMcpOauthDiscoveryPath,
+  isMcpOauthProtocolPath,
+  isPublicOAuthMcpPath,
+  looksLikeMcpOauthJwt,
+  mcpOauthChallengeHeaders,
+  urlHasCredentialQuery,
+  verifyMcpAccessToken,
+} from "./lib/mcp-oauth";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
 import {
   handlePrimaTitle,
@@ -61,6 +72,12 @@ export default {
         return handleX402Catalog(request, env, requestId);
       }
 
+      // SuperGrok MCP OAuth (RFC 8414/7591/9728). Public metadata + DCR + PKCE.
+      // Does not unlock /joe/ore, /joe/mcp proxy, census, Helius, Stripe, or x402.
+      if (isMcpOauthDiscoveryPath(url.pathname) || isMcpOauthProtocolPath(url.pathname)) {
+        return handleMcpOauthRequest(request, env, requestId);
+      }
+
       // GET/POST /joe/mcp — Computer AddMcpServer door (header auth only).
       // First-match BEFORE isHedgehogPath and isAaronPath. Not AARON_PATHS. Not Hedgehog /mcp.
       if (
@@ -75,13 +92,20 @@ export default {
         return proxyToAaron(request, env, requestId);
       }
 
-      // POST/GET /joe/hedgehog — JOE-gated MCP transport proxy to AARON_ORIGIN.
+      // POST/GET /joe/hedgehog — SuperGrok OAuth serves local public tools;
+      // JOE token still proxies to AARON_ORIGIN (computer door).
       // First-match BEFORE isHedgehogPath and isAaronPath. Not AARON_PATHS. Not /mcp/*.
       if (isJoeHedgehogPath(url.pathname)) {
+        const oauth = await maybePublicMcpOauth(request, env, url.origin);
+        if (oauth === "invalid") {
+          return unauthorizedPublicMcp(request, env, requestId, "/joe/hedgehog");
+        }
+        if (oauth === "ok") {
+          return handleMcpSession(request, env, requestId);
+        }
         const auth = await validateJoeToken(request, url.pathname, env);
         if (!auth.ok) {
-          const cors = getCorsHeaders(request, env);
-          return jsonResponse({ error: auth.error, requestId }, 401, cors, requestId);
+          return unauthorizedPublicMcp(request, env, requestId, "/joe/hedgehog", auth.error);
         }
         return proxyToAaron(request, env, requestId);
       }
@@ -112,8 +136,20 @@ export default {
 
       // HEDGEHOG MCP + health
       if (isHedgehogPath(url.pathname)) {
+        if (isPublicOAuthMcpPath(url.pathname)) {
+          const oauth = await maybePublicMcpOauth(request, env, url.origin);
+          if (oauth === "invalid") {
+            return unauthorizedPublicMcp(request, env, requestId, "/mcp");
+          }
+          if (oauth === "ok") {
+            return handleHedgehog(request, env, requestId);
+          }
+        }
         const auth = await validateJoeToken(request, url.pathname, env);
         if (!auth.ok) {
+          if (isPublicOAuthMcpPath(url.pathname)) {
+            return unauthorizedPublicMcp(request, env, requestId, "/mcp", auth.error);
+          }
           const cors = getCorsHeaders(request, env);
           return jsonResponse({ error: auth.error, requestId }, 401, cors, requestId);
         }
@@ -130,7 +166,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog (SuperGrok OAuth), /oauth/authorize, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
           requestId,
         },
         404,
@@ -154,5 +190,56 @@ export default {
     }
   },
 };
+
+async function maybePublicMcpOauth(
+  request: Request,
+  env: GatewayEnv,
+  origin: string,
+): Promise<"ok" | "invalid" | "absent"> {
+  const authHeader = request.headers.get("Authorization") ?? "";
+  if (!authHeader.startsWith("Bearer ")) return "absent";
+  const token = authHeader.slice(7).trim();
+  if (!token) return "absent";
+  if (!looksLikeMcpOauthJwt(token)) return "absent";
+  const verified = await verifyMcpAccessToken(token, env, origin);
+  return verified.ok ? "ok" : "invalid";
+}
+
+function unauthorizedPublicMcp(
+  request: Request,
+  env: GatewayEnv,
+  requestId: string,
+  resourcePath: string,
+  error?: string,
+): Response {
+  const cors = getCorsHeaders(request, env);
+  const origin = new URL(request.url).origin;
+  cors.set("WWW-Authenticate", mcpOauthChallengeHeaders(origin, resourcePath));
+  cors.set("Cache-Control", "no-store");
+  const reqUrl = new URL(request.url);
+  if (urlHasCredentialQuery(reqUrl)) {
+    return jsonResponse(
+      {
+        error:
+          "Unauthorized — do not put tokens in the URL. Paste https://mcp.jettoptics.ai/joe/hedgehog and complete SuperGrok OAuth.",
+        requestId,
+      },
+      401,
+      cors,
+      requestId,
+    );
+  }
+  return jsonResponse(
+    {
+      error:
+        error ??
+        "Unauthorized — complete SuperGrok OAuth or send a JOE API token (Authorization: Bearer / X-JOE-Token).",
+      requestId,
+    },
+    401,
+    cors,
+    requestId,
+  );
+}
 
 export type { GatewayEnv };
