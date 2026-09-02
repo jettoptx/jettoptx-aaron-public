@@ -13,10 +13,11 @@ HEDGEHOG_ORIGIN = "https://hedgehog.jettoptics.ai"
 SPACETIME_HTTP_URL = "https://stdb.jettoptics.ai/v1/database/jettchat"
 ENV = "production"
 CORS_DEV_DOMAINS = ""
-CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jettoptx.chat,https://www.jettoptx.chat,https://jettoptx.vercel.app,capacitor://localhost,http://localhost:*"
+CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jettoptx.chat,https://www.jettoptx.chat,https://jettoptx.vercel.app,https://grok.com,https://*.grok.com,https://x.ai,https://*.x.ai,capacitor://localhost,http://localhost:*"
 
 # Secrets (dashboard → Worker → Settings → Secrets — never commit values):
 #   MCP_API_KEY              — static admin MCP key (Bearer / X-JOE-Token)
+#   MCP_OAUTH_SIGNING_KEY    — optional; SuperGrok MCP OAuth JWTs (else derived from MCP_API_KEY)
 #   SHIELD4_ALLOWLIST_JSON   — X OAuth username → { twinId, wallet?, email?, founderBypass? }
 #                              Empty/unset = fail-closed for X OAuth only
 #   HELIUS_MAINNET_RPC       — optional paid RPC; code falls back to public mainnet-beta

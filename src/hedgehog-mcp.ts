@@ -1,12 +1,34 @@
 /**
  * HEDGEHOG MCP edge handler.
  * Includes search06 discovery/diagnostics tools (docs search, augment lookup, edge diagnose).
- * SSE streaming + Jetson :8811 proxy remain future work.
+ * Streamable HTTP + legacy SSE discovery. Jetson :8811 proxy remains future work.
  */
 
 import type { GatewayEnv } from "./lib/cors";
 import { getCorsHeaders, jsonResponse } from "./lib/cors";
 import { MCP_TOOLS, executeMcpTool, augmentStatusPayload } from "./data/augment-registry";
+
+const SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"] as const;
+type McpMethod =
+  | "initialize"
+  | "notifications/initialized"
+  | "tools/list"
+  | "tools/call"
+  | "ping"
+  | "resources/list"
+  | "prompts/list";
+
+function isMcpMethod(method: string): method is McpMethod {
+  return (
+    method === "initialize" ||
+    method === "notifications/initialized" ||
+    method === "tools/list" ||
+    method === "tools/call" ||
+    method === "ping" ||
+    method === "resources/list" ||
+    method === "prompts/list"
+  );
+}
 
 export function isHedgehogPath(pathname: string): boolean {
   return (
@@ -24,6 +46,175 @@ export function isHedgehogPath(pathname: string): boolean {
  */
 export function isJettchatCensusPath(pathname: string): boolean {
   return pathname === "/mcp/jettchat";
+}
+
+/**
+ * Streamable HTTP MCP (POST JSON-RPC / GET SSE / DELETE session).
+ * Path-agnostic so SuperGrok can use /joe/hedgehog after OAuth.
+ */
+export async function handleMcpSession(
+  request: Request,
+  env: GatewayEnv,
+  requestId: string,
+): Promise<Response> {
+  const url = new URL(request.url);
+  const cors = getCorsHeaders(request, env);
+  cors.set("X-Request-ID", requestId);
+  cors.set("Access-Control-Expose-Headers", "WWW-Authenticate, Mcp-Session-Id, X-Request-ID");
+
+  if (request.method === "DELETE") {
+    return new Response(null, { status: 204, headers: cors });
+  }
+
+  if (request.method === "GET") {
+    return mcpSseDiscovery(url, cors, requestId);
+  }
+
+  if (request.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405, cors, requestId);
+  }
+
+  let body: {
+    jsonrpc?: string;
+    id?: number | string | null;
+    method?: string;
+    params?: Record<string, unknown>;
+  };
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: "Invalid JSON" }, 400, cors, requestId);
+  }
+
+  const { method, params, id } = body;
+  if (!method) {
+    return jsonResponse(
+      { jsonrpc: "2.0", id: id ?? null, error: { code: -32600, message: "Missing method" } },
+      400,
+      cors,
+      requestId,
+    );
+  }
+
+  // Notifications have no id — Streamable HTTP uses 202.
+  if (id === undefined || id === null) {
+    return new Response(null, { status: 202, headers: cors });
+  }
+
+  if (!isMcpMethod(method)) {
+    return jsonResponse(
+      { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } },
+      200,
+      cors,
+      requestId,
+    );
+  }
+
+  const accept = request.headers.get("Accept") ?? "";
+  const preferSse = accept.includes("text/event-stream") && !accept.includes("application/json");
+
+  const rpc = await mcpJsonRpc(method, params ?? {}, id, env);
+  if (method === "initialize") {
+    cors.set("Mcp-Session-Id", crypto.randomUUID());
+    cors.set("MCP-Protocol-Version", String(
+      (rpc.result as { protocolVersion?: string } | undefined)?.protocolVersion ?? "2024-11-05",
+    ));
+  }
+
+  if (preferSse) {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(`event: message\ndata: ${JSON.stringify(rpc)}\n\n`));
+        controller.close();
+      },
+    });
+    cors.set("Content-Type", "text/event-stream");
+    cors.set("Cache-Control", "no-cache");
+    return new Response(stream, { status: 200, headers: cors });
+  }
+
+  return jsonResponse(rpc, 200, cors, requestId);
+}
+
+async function mcpJsonRpc(
+  method: McpMethod,
+  params: Record<string, unknown>,
+  id: number | string,
+  env: GatewayEnv,
+): Promise<Record<string, unknown>> {
+  switch (method) {
+    case "initialize": {
+      const requested =
+        typeof params.protocolVersion === "string" ? params.protocolVersion : "";
+      const protocolVersion = (
+        SUPPORTED_PROTOCOL_VERSIONS as readonly string[]
+      ).includes(requested)
+        ? requested
+        : "2024-11-05";
+      return {
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion,
+          capabilities: { tools: { listChanged: false } },
+          serverInfo: { name: "jettoptx-aaron-hedgehog", version: "0.2.0" },
+        },
+      };
+    }
+    case "notifications/initialized":
+      return { jsonrpc: "2.0", id, result: {} };
+    case "ping":
+      return { jsonrpc: "2.0", id, result: {} };
+    case "tools/list":
+      return { jsonrpc: "2.0", id, result: { tools: MCP_TOOLS } };
+    case "tools/call": {
+      const toolName = params.name as string;
+      const toolArgs = (params.arguments ?? {}) as Record<string, unknown>;
+      try {
+        const result = await executeMcpTool(toolName, toolArgs, env);
+        return {
+          jsonrpc: "2.0",
+          id,
+          result: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
+        };
+      } catch (err) {
+        return {
+          jsonrpc: "2.0",
+          id,
+          error: { code: -32601, message: String(err) },
+        };
+      }
+    }
+    case "resources/list":
+      return { jsonrpc: "2.0", id, result: { resources: [] } };
+    case "prompts/list":
+      return { jsonrpc: "2.0", id, result: { prompts: [] } };
+    default: {
+      const _never: never = method;
+      return {
+        jsonrpc: "2.0",
+        id,
+        error: { code: -32601, message: `Method not found: ${_never}` },
+      };
+    }
+  }
+}
+
+function mcpSseDiscovery(url: URL, cors: Headers, requestId: string): Response {
+  const base = `${url.protocol}//${url.host}${url.pathname.replace(/\/$/, "") || "/mcp"}`;
+  const sessionId = crypto.randomUUID();
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      controller.enqueue(encoder.encode(`event: endpoint\ndata: ${base}?sessionId=${sessionId}\n\n`));
+      controller.close();
+    },
+  });
+  cors.set("Content-Type", "text/event-stream");
+  cors.set("Cache-Control", "no-cache");
+  cors.set("X-Request-ID", requestId);
+  return new Response(stream, { status: 200, headers: cors });
 }
 
 export async function handleHedgehog(
@@ -56,7 +247,8 @@ export async function handleHedgehog(
         name: "JOE — Jett Optics Engine",
         gateway: "jettoptx-aaron-hedgehog",
         mcpEndpoint: "/mcp",
-        auth: "JOE API token via Authorization: Bearer or X-JOE-Token — issue at jettoptx.chat/support",
+        supergrokMcp: "/joe/hedgehog",
+        auth: "SuperGrok: OAuth at /joe/hedgehog (no JOE token paste). Computer: Authorization: Bearer or X-JOE-Token — issue at jettoptx.chat/support",
         augments: "00–09 JETT Augments",
         search06Tools: ["jett_docs_search", "jett_augment_lookup", "jett_edge_diagnose"],
         docs: "https://docs.jettoptx.dev",
@@ -67,98 +259,8 @@ export async function handleHedgehog(
     );
   }
 
-  // MCP JSON-RPC (Phase 0 — synchronous stub; Phase 1 adds SSE stream)
-  if (url.pathname === "/mcp" && request.method === "POST") {
-    let body: { jsonrpc?: string; id?: number; method?: string; params?: Record<string, unknown> };
-    try {
-      body = await request.json();
-    } catch {
-      return jsonResponse({ error: "Invalid JSON" }, 400, cors, requestId);
-    }
-
-    const { method, params, id } = body;
-
-    if (method === "initialize") {
-      return jsonResponse(
-        {
-          jsonrpc: "2.0",
-          id,
-          result: {
-            protocolVersion: "2024-11-05",
-            capabilities: { tools: {} },
-            serverInfo: { name: "jettoptx-aaron-hedgehog", version: "0.2.0" },
-          },
-        },
-        200,
-        cors,
-        requestId,
-      );
-    }
-
-    if (method === "tools/list") {
-      return jsonResponse(
-        { jsonrpc: "2.0", id, result: { tools: MCP_TOOLS } },
-        200,
-        cors,
-        requestId,
-      );
-    }
-
-    if (method === "tools/call") {
-      const toolName = params?.name as string;
-      const toolArgs = (params?.arguments ?? {}) as Record<string, unknown>;
-      try {
-        const result = await executeMcpTool(toolName, toolArgs, env);
-        return jsonResponse(
-          {
-            jsonrpc: "2.0",
-            id,
-            result: { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] },
-          },
-          200,
-          cors,
-          requestId,
-        );
-      } catch (err) {
-        return jsonResponse(
-          {
-            jsonrpc: "2.0",
-            id,
-            error: { code: -32601, message: String(err) },
-          },
-          200,
-          cors,
-          requestId,
-        );
-      }
-    }
-
-    return jsonResponse(
-      { jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } },
-      200,
-      cors,
-      requestId,
-    );
-  }
-
-  // MCP SSE discovery (GET /mcp)
-  if (url.pathname === "/mcp" && request.method === "GET") {
-    const base = `${url.protocol}//${url.host}`;
-    const sessionId = crypto.randomUUID();
-    const stream = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        controller.enqueue(
-          encoder.encode(
-            `event: endpoint\ndata: ${base}/mcp?sessionId=${sessionId}\n\n`,
-          ),
-        );
-      },
-    });
-    cors.set("Content-Type", "text/event-stream");
-    cors.set("Cache-Control", "no-cache");
-    cors.set("X-Request-ID", requestId);
-    return new Response(stream, { status: 200, headers: cors });
+  if (url.pathname === "/mcp" || url.pathname === "/mcp/") {
+    return handleMcpSession(request, env, requestId);
   }
 
   // Proxy remaining HEDGEHOG REST to Jetson origin
