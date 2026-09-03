@@ -60,7 +60,9 @@ MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe
 
 - **SuperGrok OAuth** (phone sheet): unauthenticated requests return `401` + `WWW-Authenticate` resource metadata. After PKCE consent, the Worker serves Streamable HTTP MCP locally (`tools/list` = the public 6 tools). The OAuth bearer is **not** proxied to `AARON_ORIGIN`.
 
-OAuth consent sets `JOE_OAUTH_CSRF` as `Path=/; HttpOnly; SameSite=Lax; Secure` on HTTPS, with `Domain=mcp.jettoptics.ai` only on that host (never `.jettoptics.ai`). Authentik / Google subscriber CSRF is origin-side (AstroJOE / Jetson `:8811`) — not implemented here.
+OAuth consent sets `JOE_OAUTH_CSRF` as `Path=/oauth; HttpOnly; SameSite=None; Secure` on HTTPS (covers GET+POST `/oauth/authorize`; not sent to `/joe/ore` or `/mcp`). `Domain=mcp.jettoptics.ai` only on that host (never `.jettoptics.ai`). GET expires leftover `Path=/` cookies so Approve does not require clearing cookies. POST matches any same-name cookie value (stale-first Cookie headers). HTTP localhost stays `SameSite=Lax`. Authentik / Google subscriber CSRF is origin-side (AstroJOE / Jetson `:8811`) — not implemented here.
+
+`GET /health` and `GET /.well-known/joe-gateway` include `inboxConfigured` (boolean only) from `HEDGEHOG_INBOX_URL` + `HEDGEHOG_INBOX_KEY` presence (`JOE_INBOX_*` aliases). Never values.
 - **JOE token** (computer): `Authorization: Bearer` or `X-JOE-Token` still `proxyToAaron` to `AARON_ORIGIN`. Missing or wrong token → `401` (no proxy).
 
 This path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, and is **not** proxied to Hedgehog `:8811`. First-match before `isHedgehogPath` / `isAaronPath` so `/mcp/*` cannot swallow it.

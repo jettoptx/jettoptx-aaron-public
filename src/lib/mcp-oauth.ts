@@ -287,15 +287,12 @@ async function authorizeGet(
     "Content-Security-Policy",
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   );
-  headers.set(
-    "Set-Cookie",
-    csrfCookie({
-      secure: url.protocol === "https:",
-      value: csrf,
-      maxAge: CSRF_TTL_SEC,
-      hostname: url.hostname,
-    }),
-  );
+  applyCsrfCookies(headers, {
+    secure: url.protocol === "https:",
+    value: csrf,
+    maxAge: CSRF_TTL_SEC,
+    hostname: url.hostname,
+  });
   headers.set("X-Request-ID", requestId);
   return new Response(html, { status: 200, headers });
 }
@@ -308,9 +305,10 @@ async function authorizePost(
   requestId: string,
 ): Promise<Response> {
   const form = await readForm(request);
-  const cookieCsrf = readCookie(request, "JOE_OAUTH_CSRF");
   const formCsrf = form.get("csrf_token") ?? "";
-  if (!cookieCsrf || !formCsrf || cookieCsrf !== formCsrf) {
+  // Match any JOE_OAUTH_CSRF value. Stale Path=/ or host-only leftovers from
+  // earlier deploys can appear first in Cookie; first-wins would false-mismatch.
+  if (!formCsrf || !csrfCookieMatches(request, formCsrf)) {
     return authorizeErrorHtml(cors, "invalid_request", "CSRF token mismatch");
   }
   if (form.get("approve") !== "1") {
@@ -361,15 +359,12 @@ async function authorizePost(
 
   const headers = new Headers(cors);
   headers.set("Location", redirectWithCode(parsed.redirectUri, code, parsed.state));
-  headers.set(
-    "Set-Cookie",
-    csrfCookie({
-      secure: origin.startsWith("https"),
-      value: "",
-      maxAge: 0,
-      hostname: new URL(origin).hostname,
-    }),
-  );
+  applyCsrfCookies(headers, {
+    secure: origin.startsWith("https"),
+    value: "",
+    maxAge: 0,
+    hostname: new URL(origin).hostname,
+  });
   headers.set("Cache-Control", "no-store");
   headers.set("X-Request-ID", requestId);
   return new Response(null, { status: 302, headers });
@@ -785,42 +780,87 @@ async function readForm(request: Request): Promise<URLSearchParams> {
   }
 }
 
-function readCookie(request: Request, name: string): string | null {
+const CSRF_COOKIE_NAME = "JOE_OAUTH_CSRF";
+/** Form GET+POST are /oauth/authorize. Do not send this cookie to /joe/ore or /mcp. */
+const CSRF_COOKIE_PATH = "/oauth";
+
+function readCookieValues(request: Request, name: string): string[] {
   const header = request.headers.get("Cookie") ?? "";
+  const values: string[] = [];
   for (const part of header.split(";")) {
     const [k, ...rest] = part.trim().split("=");
-    if (k === name) return rest.join("=");
+    if (k === name) {
+      const value = rest.join("=");
+      if (value) values.push(value);
+    }
   }
-  return null;
+  return values;
+}
+
+function csrfCookieMatches(request: Request, formCsrf: string): boolean {
+  return readCookieValues(request, CSRF_COOKIE_NAME).includes(formCsrf);
 }
 
 /**
- * Worker OAuth consent CSRF (authorize GET / POST).
+ * Worker OAuth consent CSRF (authorize GET / POST /oauth/authorize).
  *
- * Host-scoped to this Worker host only:
- *   - On https://mcp.jettoptics.ai set Domain=mcp.jettoptics.ai (not .jettoptics.ai).
- *   - Elsewhere omit Domain (host-only). Never send this cookie to aaron / stdb / other hosts.
- * SameSite=Lax + Secure on HTTPS so a top-level return to mcp.jettoptics.ai still
- * carries the cookie; consent POST is first-party so Lax is sufficient.
+ * SuperGrok Approve is an embedded cross-site POST. SameSite=Lax is not sent
+ * on that POST (GET consent renders; POST then mismatches). HTTPS uses
+ * SameSite=None; Secure. HTTP localhost stays Lax (None without Secure is rejected).
  *
- * Authentik / Google subscriber sign-in CSRF is NOT this cookie. Authentik is not
- * in this repo (AstroJOE owns Jetson :8811). Origin must set authentik_csrf with
- * SameSite=Lax (top-level GET callback) or SameSite=None; Secure (cross-site POST
- * from accounts.google.com) and Domain= the Authentik host or mcp.jettoptics.ai —
- * never a parent Domain that drops on Google retry.
+ * Path=/oauth covers GET and POST /oauth/authorize (form action) and is not
+ * sent to /joe/ore, /mcp, or other doors.
+ *
+ * Host-scoped: Domain=mcp.jettoptics.ai only on that host. Never .jettoptics.ai.
+ * GET also expires leftover Path=/ cookies (host-only and Domain=mcp) so a
+ * retry does not require clearing cookies. POST matches any same-name value.
+ *
+ * Authentik / Google subscriber CSRF is origin-side (AstroJOE / :8811).
  */
 function csrfCookie(opts: {
   secure: boolean;
   value: string;
   maxAge: number;
   hostname: string;
+  path?: string;
+  sameSite?: "None" | "Lax";
+  domain?: string | null;
 }): string {
-  const flags = ["Path=/", "HttpOnly", "SameSite=Lax", `Max-Age=${opts.maxAge}`];
+  const path = opts.path ?? CSRF_COOKIE_PATH;
+  const sameSite = opts.sameSite ?? (opts.secure ? "None" : "Lax");
+  const flags = ["HttpOnly", `Path=${path}`, `SameSite=${sameSite}`, `Max-Age=${opts.maxAge}`];
   if (opts.secure) flags.push("Secure");
-  if (opts.hostname === "mcp.jettoptics.ai") {
-    flags.push("Domain=mcp.jettoptics.ai");
+  const domain =
+    opts.domain === undefined
+      ? opts.hostname === "mcp.jettoptics.ai"
+        ? "mcp.jettoptics.ai"
+        : null
+      : opts.domain;
+  if (domain) flags.push(`Domain=${domain}`);
+  return `${CSRF_COOKIE_NAME}=${opts.value}; ${flags.join("; ")}`;
+}
+
+function expireStaleCsrfCookies(secure: boolean, hostname: string): string[] {
+  const expired = { secure, value: "", maxAge: 0, hostname };
+  const out = [
+    // Pre-#23 host-only Path=/
+    csrfCookie({ ...expired, path: "/", sameSite: "Lax", domain: null }),
+  ];
+  if (hostname === "mcp.jettoptics.ai") {
+    // #23 Path=/ ; Domain=mcp.jettoptics.ai ; SameSite=Lax
+    out.push(csrfCookie({ ...expired, path: "/", sameSite: "Lax", domain: "mcp.jettoptics.ai" }));
   }
-  return `JOE_OAUTH_CSRF=${opts.value}; ${flags.join("; ")}`;
+  return out;
+}
+
+function applyCsrfCookies(
+  headers: Headers,
+  opts: { secure: boolean; value: string; maxAge: number; hostname: string },
+): void {
+  for (const stale of expireStaleCsrfCookies(opts.secure, opts.hostname)) {
+    headers.append("Set-Cookie", stale);
+  }
+  headers.append("Set-Cookie", csrfCookie(opts));
 }
 
 function oauthError(

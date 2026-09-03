@@ -73,25 +73,44 @@ async function pkce(): Promise<{ verifier: string; challenge: string }> {
   return { verifier, challenge: b64url(new Uint8Array(digest)) };
 }
 
+function setCookies(res: Response): string[] {
+  if (typeof res.headers.getSetCookie === "function") {
+    return res.headers.getSetCookie();
+  }
+  const raw = res.headers.get("Set-Cookie");
+  return raw ? [raw] : [];
+}
+
 function cookieFrom(res: Response): string {
-  const raw = res.headers.get("Set-Cookie") ?? "";
-  const match = raw.match(/JOE_OAUTH_CSRF=([^;]+)/);
-  return match ? `JOE_OAUTH_CSRF=${match[1]}` : "";
+  for (const raw of setCookies(res)) {
+    if (/Max-Age=0(?:;|$)/.test(raw)) continue;
+    const match = raw.match(/JOE_OAUTH_CSRF=([^;]*)/);
+    if (match && match[1]) return `JOE_OAUTH_CSRF=${match[1]}`;
+  }
+  return "";
 }
 
 function assertCsrfCookieAttrs(res: Response, host: string): void {
-  const raw = res.headers.get("Set-Cookie") ?? "";
-  assert(raw.includes("JOE_OAUTH_CSRF="), `CSRF Set-Cookie, got ${raw}`);
-  assert(raw.includes("Path=/"), "CSRF Path=/");
-  assert(raw.includes("HttpOnly"), "CSRF HttpOnly");
-  assert(raw.includes("SameSite=Lax"), "CSRF SameSite=Lax (consent POST is first-party)");
-  assert(!/SameSite=Strict/i.test(raw), "CSRF must not be SameSite=Strict (dies on Google hop)");
-  assert(!/Domain=\.jettoptics\.ai/i.test(raw), "CSRF must not use parent Domain=.jettoptics.ai");
-  assert(!/Domain=jettoptics\.ai(;|$)/i.test(raw), "CSRF must not use parent Domain=jettoptics.ai");
+  const all = setCookies(res);
+  const live = all.find((c) => /JOE_OAUTH_CSRF=/.test(c) && !/Max-Age=0(?:;|$)/.test(c)) ?? "";
+  const joined = all.join("\n");
+  assert(live.length > 0, `live CSRF Set-Cookie, got ${joined}`);
+  assert(live.includes("Path=/oauth"), `CSRF Path=/oauth covers GET+POST /oauth/authorize, got ${live}`);
+  assert(!/Path=\/(;|$)/.test(live.replace("Path=/oauth", "")), "live CSRF must not use Path=/");
+  assert(live.includes("HttpOnly"), "CSRF HttpOnly");
+  assert(live.includes("SameSite=None"), "CSRF SameSite=None so embedded cross-site Approve POST sends the cookie");
+  assert(live.includes("Secure"), "SameSite=None requires Secure");
+  assert(!/SameSite=Lax/i.test(live), "live HTTPS CSRF must not be SameSite=Lax (dropped on cross-site POST)");
+  assert(!/SameSite=Strict/i.test(joined), "CSRF must not be SameSite=Strict");
+  assert(!/Domain=\.jettoptics\.ai/i.test(joined), "CSRF must not use parent Domain=.jettoptics.ai");
+  assert(!/Domain=jettoptics\.ai(;|$)/i.test(joined), "CSRF must not use parent Domain=jettoptics.ai");
   if (host === "mcp.jettoptics.ai") {
-    assert(raw.includes("Domain=mcp.jettoptics.ai"), `CSRF Domain=mcp.jettoptics.ai, got ${raw}`);
-    assert(raw.includes("Secure"), "HTTPS CSRF must be Secure");
+    assert(live.includes("Domain=mcp.jettoptics.ai"), `CSRF Domain=mcp.jettoptics.ai, got ${live}`);
   }
+  assert(
+    all.some((c) => /Max-Age=0/.test(c) && c.includes("Path=/") && !c.includes("Path=/oauth")),
+    `GET must expire leftover Path=/ CSRF cookies, got ${joined}`,
+  );
 }
 
 async function completeOAuth(): Promise<string> {
@@ -149,16 +168,36 @@ async function completeOAuth(): Promise<string> {
     scope: "mcp:tools",
     response_type: "code",
   });
-  const approved = await worker.fetch(
+  const staleOnly = await worker.fetch(
     new Request(`${ORIGIN}/oauth/authorize`, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: csrf },
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Cookie: "JOE_OAUTH_CSRF=stale-leftover-path-root",
+      },
       body: form.toString(),
     }),
     env,
     ctx,
   );
-  assert(approved.status === 302, `approve → 302, got ${approved.status}`);
+  assert(staleOnly.status === 400, `stale-only CSRF → 400, got ${staleOnly.status}`);
+  const staleOnlyBody = await staleOnly.text();
+  assert(staleOnlyBody.includes("CSRF token mismatch"), "stale-only still mismatches");
+
+  const approved = await worker.fetch(
+    new Request(`${ORIGIN}/oauth/authorize`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        // Stale Path=/ leftover first — must not require cookie clearing.
+        Cookie: `JOE_OAUTH_CSRF=stale-leftover-path-root; ${csrf}`,
+      },
+      body: form.toString(),
+    }),
+    env,
+    ctx,
+  );
+  assert(approved.status === 302, `approve with stale-first cookie → 302, got ${approved.status}`);
   const loc = approved.headers.get("Location") ?? "";
   assert(loc.startsWith(`${redirectUri}?`), `redirect to SuperGrok callback, got ${loc}`);
   const redirected = new URL(loc);
@@ -257,6 +296,31 @@ async function run(): Promise<void> {
       ctx,
     );
     assert(pathRs.status === 200, "path-style PRM");
+
+    fetchCalls = [];
+    const porchHealth = await worker.fetch(new Request(`${ORIGIN}/health`), env, ctx);
+    assert(porchHealth.status === 200, `GET /health → 200, got ${porchHealth.status}`);
+    const porchHealthJson = (await porchHealth.json()) as { inboxConfigured?: boolean; mcpTools?: number };
+    assert(porchHealthJson.inboxConfigured === false, "unset inbox → inboxConfigured false (no values leaked)");
+    assert(porchHealthJson.mcpTools === 6, "health lists 6 public tools");
+    const porchHealthText = JSON.stringify(porchHealthJson);
+    assert(!porchHealthText.toLowerCase().includes("inbox-test-key"), "health must not leak inbox key");
+
+    const gw = await worker.fetch(new Request(`${ORIGIN}/.well-known/joe-gateway`), env, ctx);
+    assert(gw.status === 200, "joe-gateway");
+    const gwJson = (await gw.json()) as { inboxConfigured?: boolean };
+    assert(gwJson.inboxConfigured === false, "joe-gateway inboxConfigured false when unset");
+
+    const healthSet = await worker.fetch(
+      new Request(`${ORIGIN}/health`),
+      { ...env, HEDGEHOG_INBOX_URL: "https://inbox.example.test/joe", HEDGEHOG_INBOX_KEY: "inbox-test-key" },
+      ctx,
+    );
+    const healthSetJson = (await healthSet.json()) as { inboxConfigured?: boolean };
+    assert(healthSetJson.inboxConfigured === true, "inbox secrets present → inboxConfigured true");
+    const healthSetText = JSON.stringify(healthSetJson);
+    assert(!healthSetText.includes("inbox-test-key"), "inboxConfigured must not echo the key");
+    assert(!healthSetText.includes("inbox.example.test"), "inboxConfigured must not echo the URL");
 
     fetchCalls = [];
     const access = await completeOAuth();
