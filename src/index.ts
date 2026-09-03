@@ -2,7 +2,7 @@
  * jettoptx-aaron-hedgehog — Gated edge gateway for AARON + HEDGEHOG MCP
  *
  * JOE-issued API tokens required for computer MCP doors (issue at jettoptx.chat/support).
- * SuperGrok phone connectors use OAuth at /joe/hedgehog (public 5 tools; no JOE token paste).
+ * SuperGrok phone connectors use OAuth at /joe/hedgehog (public 6 tools; no JOE token paste).
  * AARON paths: attestation, gaze verify, handshake, x402 payable JOE APIs.
  * HEDGEHOG paths: MCP tools, Grok proxy to Jetson :8811.
  *

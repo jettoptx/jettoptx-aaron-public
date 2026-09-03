@@ -4,6 +4,7 @@
  */
 
 import type { GatewayEnv } from "../lib/cors";
+import { executeMessageJoe, MESSAGE_JOE_TOOL_NAME } from "../lib/message-joe";
 import {
   jettAugmentLookup,
   jettDocsSearch,
@@ -68,6 +69,21 @@ export const MCP_TOOLS = [
       },
     },
   },
+  {
+    name: MESSAGE_JOE_TOOL_NAME,
+    description:
+      "Text-only accept-and-ack to Joe. Sends a message string and returns an ack. No mesh keys. If the inbox webhook secrets are set the text is POSTed; if unset the message is still accepted and Joe is not woken.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        message: {
+          type: "string",
+          description: "Plain text for Joe (no files, images, or mesh credentials)",
+        },
+      },
+      required: ["message"],
+    },
+  },
 ];
 
 /**
@@ -118,6 +134,8 @@ export async function executeMcpTool(
         env,
         MCP_TOOLS.map((t) => t.name),
       );
+    case MESSAGE_JOE_TOOL_NAME:
+      return executeMessageJoe(args, env);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }

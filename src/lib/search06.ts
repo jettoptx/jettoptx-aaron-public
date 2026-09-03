@@ -373,10 +373,18 @@ export async function jettEdgeDiagnose(
   };
 
   // Booleans only — never echo secret values or allowlist contents.
+  const inboxUrl = Boolean(
+    (env.HEDGEHOG_INBOX_URL ?? env.JOE_INBOX_URL)?.trim(),
+  );
+  const inboxKey = Boolean(
+    (env.HEDGEHOG_INBOX_KEY ?? env.JOE_INBOX_KEY)?.trim(),
+  );
   const configFlags = {
     mcpApiKeyConfigured: Boolean(env.MCP_API_KEY?.trim()),
     heliusRpcConfigured: Boolean(env.HELIUS_MAINNET_RPC?.trim()),
     shield4AllowlistConfigured: Boolean(env.SHIELD4_ALLOWLIST_JSON?.trim()),
+    // Booleans only — never echo inbox URL or key.
+    inboxWebhookConfigured: inboxUrl && inboxKey,
   };
 
   const probes: OriginProbe[] = [];

@@ -19,7 +19,7 @@
 | Host | Role |
 |------|------|
 | `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
-| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; SuperGrok OAuth `POST/GET /joe/hedgehog` (public 5 tools); JOE-gated `GET/POST /joe/mcp` (AddMcpServer); JOE-token `POST/GET /joe/hedgehog` proxy; JOE-gated `POST/GET /joe/ore/rpc` + `GET /joe/ore/subscribe` (ORE/AgenC porch); JOE-gated `GET /mcp/jettchat` census; Discord/mobile MOJO deep-link |
+| `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; SuperGrok OAuth `POST/GET /joe/hedgehog` (public 6 tools including `message_joe`); JOE-gated `GET/POST /joe/mcp` (AddMcpServer); JOE-token `POST/GET /joe/hedgehog` proxy; JOE-gated `POST/GET /joe/ore/rpc` + `GET /joe/ore/subscribe` (ORE/AgenC porch); JOE-gated `GET /mcp/jettchat` census; Discord/mobile MOJO deep-link |
 
 ## MOJO deep-link (`/v`)
 
@@ -42,9 +42,11 @@ https://mcp.jettoptics.ai/joe/hedgehog
 
 Do not use `jettoptx.chat/api/mcp/hedgehog` (that host 301s and is not this porch). Do not put `?key=` / `?token=` on the Server URL.
 
-The phone sheet cannot send `X-JOE-Token`. After SuperGrok completes OAuth (CIMD or DCR + PKCE + consent), `tools/list` returns the public 5 tools implemented on this Worker:
+The phone sheet cannot send `X-JOE-Token`. After SuperGrok completes OAuth (CIMD or DCR + PKCE + consent), `tools/list` returns the public 6 tools implemented on this Worker:
 
-`hedgehog_health` · `jett_augment_status` · `jett_docs_search` · `jett_augment_lookup` · `jett_edge_diagnose`
+`hedgehog_health` · `jett_augment_status` · `jett_docs_search` · `jett_augment_lookup` · `jett_edge_diagnose` · `message_joe`
+
+`message_joe` is text-only accept-and-ack (no mesh keys). If Worker secrets `HEDGEHOG_INBOX_URL` + `HEDGEHOG_INBOX_KEY` (or `JOE_INBOX_*`) are set, the text is POSTed to that webhook. If unset, the tool still acks and Joe is not woken.
 
 That OAuth access token does **not** unlock `/joe/ore`, `/joe/mcp` proxy, JettChat census, Helius, Stripe, faucet, or x402.
 
@@ -56,7 +58,9 @@ MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe
 
 **Joe/hedgehog MCP transport:** `POST`/`GET` `https://mcp.jettoptics.ai/joe/hedgehog` (optional trailing slash; SSE sibling `/joe/hedgehog/sse`).
 
-- **SuperGrok OAuth** (phone sheet): unauthenticated requests return `401` + `WWW-Authenticate` resource metadata. After PKCE consent, the Worker serves Streamable HTTP MCP locally (`tools/list` = the public 5 tools). The OAuth bearer is **not** proxied to `AARON_ORIGIN`.
+- **SuperGrok OAuth** (phone sheet): unauthenticated requests return `401` + `WWW-Authenticate` resource metadata. After PKCE consent, the Worker serves Streamable HTTP MCP locally (`tools/list` = the public 6 tools). The OAuth bearer is **not** proxied to `AARON_ORIGIN`.
+
+OAuth consent sets `JOE_OAUTH_CSRF` as `Path=/; HttpOnly; SameSite=Lax; Secure` on HTTPS, with `Domain=mcp.jettoptics.ai` only on that host (never `.jettoptics.ai`). Authentik / Google subscriber CSRF is origin-side (AstroJOE / Jetson `:8811`) — not implemented here.
 - **JOE token** (computer): `Authorization: Bearer` or `X-JOE-Token` still `proxyToAaron` to `AARON_ORIGIN`. Missing or wrong token → `401` (no proxy).
 
 This path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, and is **not** proxied to Hedgehog `:8811`. First-match before `isHedgehogPath` / `isAaronPath` so `/mcp/*` cannot swallow it.
@@ -109,6 +113,7 @@ All `/mcp` `tools/call` requests require a JOE token (except public `/health`).
 | `jett_docs_search` | **06 Search** | `GET docs.jettoptx.dev/api/search?query=` (Fumadocs; not `?q=`); absolute `docs.jettoptx.dev` links; static index fallback |
 | `jett_augment_lookup` | **06 Search** | Look up one augment by digit/name (role, HEAT, AGT) |
 | `jett_edge_diagnose` | **06 Search** | Configured hosts, tool list, optional origin/docs probes (no secrets) |
+| `message_joe` | 00 Core | Text-only accept-and-ack to Joe. Optional inbox webhook (`HEDGEHOG_INBOX_URL` + `HEDGEHOG_INBOX_KEY`). Unset → ack, Joe not woken. |
 
 Example (after auth):
 
@@ -161,6 +166,10 @@ npx wrangler secret put HELIUS_MAINNET_RPC       # optional
 # npx wrangler secret put CF_ACCESS_CLIENT_ID
 # npx wrangler secret put CF_ACCESS_CLIENT_SECRET
 # npx wrangler secret put XAI_API_KEY
+# Optional message_joe inbox (both required to POST; never invent a URL):
+# npx wrangler secret put HEDGEHOG_INBOX_URL
+# npx wrangler secret put HEDGEHOG_INBOX_KEY
+# Aliases: JOE_INBOX_URL / JOE_INBOX_KEY
 ```
 
 ## Architecture
@@ -170,7 +179,7 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for edge planes, client stack, and secu
 ```text
 Client  →  Cloudflare Worker (this repo)
               ├── GET/POST /joe/mcp → JOE header gate → proxy → AARON_ORIGIN (AddMcpServer; not AARON_PATHS)
-              ├── POST/GET /joe/hedgehog → SuperGrok OAuth (local 5 tools) or JOE token → proxy AARON_ORIGIN
+              ├── POST/GET /joe/hedgehog → SuperGrok OAuth (local 6 tools) or JOE token → proxy AARON_ORIGIN
               ├── /.well-known/oauth-* + /oauth/* → public MCP OAuth (DCR + PKCE)
               ├── POST/GET /joe/ore/rpc + GET /joe/ore/subscribe → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)

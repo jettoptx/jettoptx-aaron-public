@@ -10,7 +10,7 @@ Clients (Cursor, Hermes, jettoptx.chat, agents)
         ▼
 jettoptx-aaron-public (Cloudflare Worker)
   ├── JOE API token gate (MCP paths)
-  ├── SuperGrok MCP OAuth (public 5 tools at /joe/hedgehog — no JOE token paste)
+  ├── SuperGrok MCP OAuth (public 6 tools at /joe/hedgehog — no JOE token paste)
   ├── /v MOJO deep-link (302 → jettmojo://verify?s=…)
   ├── GET /specs/prima-depin-job.json (public JOB-SPEC JSON, never 402)
   ├── AARON proxy → aaron.jettoptics.ai

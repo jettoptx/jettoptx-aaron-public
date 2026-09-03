@@ -1,6 +1,6 @@
 /**
  * SuperGrok phone sheet is OAuth-only. After DCR + PKCE + consent,
- * POST /joe/hedgehog tools/list must return the public 5 tools locally
+ * POST /joe/hedgehog tools/list must return the public 6 tools locally
  * (never proxy to AARON, never unlock /joe/ore).
  *
  * Run: npm test
@@ -79,6 +79,21 @@ function cookieFrom(res: Response): string {
   return match ? `JOE_OAUTH_CSRF=${match[1]}` : "";
 }
 
+function assertCsrfCookieAttrs(res: Response, host: string): void {
+  const raw = res.headers.get("Set-Cookie") ?? "";
+  assert(raw.includes("JOE_OAUTH_CSRF="), `CSRF Set-Cookie, got ${raw}`);
+  assert(raw.includes("Path=/"), "CSRF Path=/");
+  assert(raw.includes("HttpOnly"), "CSRF HttpOnly");
+  assert(raw.includes("SameSite=Lax"), "CSRF SameSite=Lax (consent POST is first-party)");
+  assert(!/SameSite=Strict/i.test(raw), "CSRF must not be SameSite=Strict (dies on Google hop)");
+  assert(!/Domain=\.jettoptics\.ai/i.test(raw), "CSRF must not use parent Domain=.jettoptics.ai");
+  assert(!/Domain=jettoptics\.ai(;|$)/i.test(raw), "CSRF must not use parent Domain=jettoptics.ai");
+  if (host === "mcp.jettoptics.ai") {
+    assert(raw.includes("Domain=mcp.jettoptics.ai"), `CSRF Domain=mcp.jettoptics.ai, got ${raw}`);
+    assert(raw.includes("Secure"), "HTTPS CSRF must be Secure");
+  }
+}
+
 async function completeOAuth(): Promise<string> {
   const { verifier, challenge } = await pkce();
   const redirectUri = "https://grok.com/oauth/callback";
@@ -116,9 +131,11 @@ async function completeOAuth(): Promise<string> {
   assert(consent.status === 200, `consent HTML → 200, got ${consent.status}`);
   const html = await consent.text();
   assert(html.includes("hedgehog_health"), "consent lists public tools");
+  assert(html.includes("message_joe"), "consent lists message_joe");
   assert(!html.toLowerCase().includes("helius"), "consent must not mention Helius");
   const csrf = cookieFrom(consent);
   assert(csrf.length > 0, "CSRF cookie set");
+  assertCsrfCookieAttrs(consent, "mcp.jettoptics.ai");
 
   const form = new URLSearchParams({
     csrf_token: csrf.split("=")[1],
@@ -181,8 +198,9 @@ async function run(): Promise<void> {
         "jett_docs_search",
         "jett_augment_lookup",
         "jett_edge_diagnose",
+        "message_joe",
       ]),
-    "public tool list matches stdio JOE Swarm",
+    "public tool list is the SuperGrok 6-tool set including message_joe",
   );
 
   installFetchMock();
@@ -263,7 +281,8 @@ async function run(): Promise<void> {
     assert(listed.status === 200, `OAuth tools/list → 200, got ${listed.status}`);
     const listedBody = (await listed.json()) as { result?: { tools?: Array<{ name: string }> } };
     const names = (listedBody.result?.tools ?? []).map((t) => t.name);
-    assert(names.length === 5, `5 tools, got ${names.length}: ${names.join(",")}`);
+    assert(names.length === 6, `6 tools, got ${names.length}: ${names.join(",")}`);
+    assert(names.includes("message_joe"), "tools/list includes message_joe");
     for (const name of expectedTools) {
       assert(names.includes(name), `tools/list includes ${name}`);
     }
@@ -293,6 +312,36 @@ async function run(): Promise<void> {
     assert(healthText.includes("hedgehog_health"), "health payload lists tools");
     assert(!healthText.includes(JOE_TOKEN), "must not echo signing material");
     assert(fetchCalls.length === 0, "tools/call stays on the Worker");
+
+    fetchCalls = [];
+    const msg = await worker.fetch(
+      new Request(MCP_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${access}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 4,
+          method: "tools/call",
+          params: { name: "message_joe", arguments: { message: "hello from SuperGrok" } },
+        }),
+      }),
+      env,
+      ctx,
+    );
+    assert(msg.status === 200, `message_joe → 200, got ${msg.status}`);
+    const msgBody = (await msg.json()) as { result?: { content?: Array<{ text?: string }> }; error?: unknown };
+    assert(!msgBody.error, "message_joe must not fail when inbox secrets are unset");
+    const msgText = msgBody.result?.content?.[0]?.text ?? "";
+    assert(msgText.includes("accepted"), "message_joe acks");
+    assert(msgText.includes("not woken") || msgText.includes("unset"), "unset inbox does not wake Joe");
+    assert(
+      fetchCalls.every((c) => !c.url.includes("inbox") && !c.url.startsWith(AARON_ORIGIN)),
+      "unset inbox must not invent a webhook URL or proxy",
+    );
+    assert(fetchCalls.length === 0, "unset inbox must not POST anywhere");
 
     fetchCalls = [];
     const ore = await worker.fetch(
@@ -458,7 +507,90 @@ async function run(): Promise<void> {
     );
     const cimdTools = ((await cimdList.json()) as { result?: { tools?: Array<{ name: string }> } })
       .result?.tools ?? [];
-    assert(cimdTools.length === 5, `CIMD tools/list → 5, got ${cimdTools.length}`);
+    assert(cimdTools.length === 6, `CIMD tools/list → 6, got ${cimdTools.length}`);
+    assert(cimdTools.some((t) => t.name === "message_joe"), "CIMD list includes message_joe");
+
+    fetchCalls = [];
+    const x402 = await worker.fetch(
+      new Request(`${ORIGIN}/x402/prima_title`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${access}` },
+      }),
+      env,
+      ctx,
+    );
+    assert(x402.status === 402, `OAuth token must not ungate x402 prima_title, got ${x402.status}`);
+
+    const inboxUrl = "https://inbox.example.test/joe";
+    const inboxEnv: GatewayEnv = {
+      ...env,
+      HEDGEHOG_INBOX_URL: inboxUrl,
+      HEDGEHOG_INBOX_KEY: "inbox-test-key",
+    };
+    fetchCalls = [];
+    const inboxPreviousFetch = globalThis.fetch;
+    const inboxPosts: Array<{ url: string; method: string; body: string; auth: string }> = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.toString()
+            : input.url;
+      const method = (
+        init?.method ?? (typeof input !== "string" && !(input instanceof URL) ? input.method : "GET")
+      ).toUpperCase();
+      if (url.startsWith("https://inbox.example.test")) {
+        const headerBag = init?.headers;
+        const auth =
+          headerBag instanceof Headers
+            ? (headerBag.get("Authorization") ?? "")
+            : headerBag && !Array.isArray(headerBag)
+              ? String((headerBag as Record<string, string>).Authorization ?? "")
+              : "";
+        inboxPosts.push({
+          url,
+          method,
+          body: typeof init?.body === "string" ? init.body : "",
+          auth,
+        });
+        return new Response(null, { status: 204 });
+      }
+      return inboxPreviousFetch(input, init);
+    }) as typeof fetch;
+    const delivered = await worker.fetch(
+      new Request(MCP_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${access}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 10,
+          method: "tools/call",
+          params: { name: "message_joe", arguments: { message: "wake joe" } },
+        }),
+      }),
+      inboxEnv,
+      ctx,
+    );
+    assert(delivered.status === 200, `message_joe with inbox → 200, got ${delivered.status}`);
+    const deliveredBody = (await delivered.json()) as { result?: { content?: Array<{ text?: string }> } };
+    const deliveredText = deliveredBody.result?.content?.[0]?.text ?? "";
+    const deliveredAck = JSON.parse(deliveredText || "{}") as { woken?: boolean; delivered?: boolean };
+    assert(
+      deliveredAck.woken === true && deliveredAck.delivered === true,
+      `inbox POST wakes Joe, posts=${inboxPosts.length} got ${deliveredText}`,
+    );
+    assert(inboxPosts.length === 1, `inbox POSTed once, got ${inboxPosts.length}`);
+    assert(inboxPosts[0].method === "POST", "inbox method POST");
+    assert(inboxPosts[0].body === "wake joe", "inbox body is the text only");
+    assert(inboxPosts[0].auth === "Bearer inbox-test-key", "inbox uses secret key, not a mesh key");
+    assert(
+      fetchCalls.every((c) => !c.url.startsWith(AARON_ORIGIN)),
+      "message_joe must not proxy to AARON",
+    );
   } finally {
     restoreFetch();
   }
@@ -466,7 +598,7 @@ async function run(): Promise<void> {
 
 run()
   .then(() => {
-    console.log("ok: SuperGrok OAuth tools/list returns 5 public tools; /joe/ore stays gated");
+    console.log("ok: SuperGrok OAuth tools/list returns 6 public tools including message_joe; /joe/ore and x402 stay gated");
   })
   .catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : err);

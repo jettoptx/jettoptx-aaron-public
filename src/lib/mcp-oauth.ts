@@ -2,7 +2,7 @@
  * MCP OAuth 2.1 (RFC 8414 / 7591 / 8707 / 9728) for SuperGrok custom connectors.
  *
  * Phone SuperGrok is OAuth-only and cannot send X-JOE-Token. This Worker is its
- * own authorization server + resource server for the **public** 5-tool subset.
+ * own authorization server + resource server for the **public** 6-tool subset.
  * Access tokens minted here never authorize /joe/ore, /joe/mcp proxy, census,
  * Helius, Stripe, faucet, or x402.
  *
@@ -287,7 +287,15 @@ async function authorizeGet(
     "Content-Security-Policy",
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   );
-  headers.set("Set-Cookie", csrfCookie(url.protocol === "https:", csrf, CSRF_TTL_SEC));
+  headers.set(
+    "Set-Cookie",
+    csrfCookie({
+      secure: url.protocol === "https:",
+      value: csrf,
+      maxAge: CSRF_TTL_SEC,
+      hostname: url.hostname,
+    }),
+  );
   headers.set("X-Request-ID", requestId);
   return new Response(html, { status: 200, headers });
 }
@@ -353,7 +361,15 @@ async function authorizePost(
 
   const headers = new Headers(cors);
   headers.set("Location", redirectWithCode(parsed.redirectUri, code, parsed.state));
-  headers.set("Set-Cookie", csrfCookie(origin.startsWith("https"), "", 0));
+  headers.set(
+    "Set-Cookie",
+    csrfCookie({
+      secure: origin.startsWith("https"),
+      value: "",
+      maxAge: 0,
+      hostname: new URL(origin).hostname,
+    }),
+  );
   headers.set("Cache-Control", "no-store");
   headers.set("X-Request-ID", requestId);
   return new Response(null, { status: 302, headers });
@@ -778,10 +794,33 @@ function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-function csrfCookie(secure: boolean, value: string, maxAge: number): string {
-  const flags = ["Path=/", "HttpOnly", "SameSite=Lax", `Max-Age=${maxAge}`];
-  if (secure) flags.push("Secure");
-  return `JOE_OAUTH_CSRF=${value}; ${flags.join("; ")}`;
+/**
+ * Worker OAuth consent CSRF (authorize GET / POST).
+ *
+ * Host-scoped to this Worker host only:
+ *   - On https://mcp.jettoptics.ai set Domain=mcp.jettoptics.ai (not .jettoptics.ai).
+ *   - Elsewhere omit Domain (host-only). Never send this cookie to aaron / stdb / other hosts.
+ * SameSite=Lax + Secure on HTTPS so a top-level return to mcp.jettoptics.ai still
+ * carries the cookie; consent POST is first-party so Lax is sufficient.
+ *
+ * Authentik / Google subscriber sign-in CSRF is NOT this cookie. Authentik is not
+ * in this repo (AstroJOE owns Jetson :8811). Origin must set authentik_csrf with
+ * SameSite=Lax (top-level GET callback) or SameSite=None; Secure (cross-site POST
+ * from accounts.google.com) and Domain= the Authentik host or mcp.jettoptics.ai —
+ * never a parent Domain that drops on Google retry.
+ */
+function csrfCookie(opts: {
+  secure: boolean;
+  value: string;
+  maxAge: number;
+  hostname: string;
+}): string {
+  const flags = ["Path=/", "HttpOnly", "SameSite=Lax", `Max-Age=${opts.maxAge}`];
+  if (opts.secure) flags.push("Secure");
+  if (opts.hostname === "mcp.jettoptics.ai") {
+    flags.push("Domain=mcp.jettoptics.ai");
+  }
+  return `JOE_OAUTH_CSRF=${opts.value}; ${flags.join("; ")}`;
 }
 
 function oauthError(
@@ -832,6 +871,7 @@ function consentHtml(parsed: AuthorizeOk, csrf: string): string {
       <li>jett_docs_search</li>
       <li>jett_augment_lookup</li>
       <li>jett_edge_diagnose</li>
+      <li>message_joe</li>
     </ul>
     <p class="meta">Redirect: ${escapeHtml(parsed.redirectUri)}</p>
     <form method="post" action="/oauth/authorize">
