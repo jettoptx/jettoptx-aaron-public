@@ -7,6 +7,7 @@
 import type { GatewayEnv } from "./lib/cors";
 import { getCorsHeaders, jsonResponse } from "./lib/cors";
 import { MCP_TOOLS, executeMcpTool, augmentStatusPayload } from "./data/augment-registry";
+import { inboxConfiguredFromEnv } from "./lib/message-joe";
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18"] as const;
 type McpMethod =
@@ -233,6 +234,7 @@ export async function handleHedgehog(
         gateway: "jettoptx-aaron-hedgehog",
         hedgehogOrigin: env.HEDGEHOG_ORIGIN,
         mcpTools: MCP_TOOLS.length,
+        inboxConfigured: inboxConfiguredFromEnv(env),
         requestId,
       },
       200,
@@ -252,6 +254,7 @@ export async function handleHedgehog(
         augments: "00–09 JETT Augments",
         search06Tools: ["jett_docs_search", "jett_augment_lookup", "jett_edge_diagnose"],
         publicTools: MCP_TOOLS.map((t) => t.name),
+        inboxConfigured: inboxConfiguredFromEnv(env),
         docs: "https://docs.jettoptx.dev",
       },
       200,

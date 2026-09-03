@@ -26,6 +26,13 @@ export interface InboxWebhook {
   key: string;
 }
 
+/** True when inbox URL+key secrets are present. Never returns values. */
+export function inboxConfiguredFromEnv(env: GatewayEnv): boolean {
+  const url = (env.HEDGEHOG_INBOX_URL ?? env.JOE_INBOX_URL)?.trim() ?? "";
+  const key = (env.HEDGEHOG_INBOX_KEY ?? env.JOE_INBOX_KEY)?.trim() ?? "";
+  return Boolean(url && key);
+}
+
 /**
  * Resolve inbox webhook from Worker secrets.
  * Prefer HEDGEHOG_INBOX_URL + HEDGEHOG_INBOX_KEY; JOE_INBOX_* are aliases.
