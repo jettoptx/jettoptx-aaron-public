@@ -31,6 +31,15 @@ export interface GatewayEnv {
    * If unset, signing derives from MCP_API_KEY. Never commit a value.
    */
   MCP_OAUTH_SIGNING_KEY?: string;
+  /**
+   * Optional inbox webhook for public `message_joe` (Worker secrets).
+   * Prefer HEDGEHOG_INBOX_URL + HEDGEHOG_INBOX_KEY; JOE_INBOX_* are aliases.
+   * Both URL and key must be set to POST. Never commit values. Never invent a URL.
+   */
+  HEDGEHOG_INBOX_URL?: string;
+  HEDGEHOG_INBOX_KEY?: string;
+  JOE_INBOX_URL?: string;
+  JOE_INBOX_KEY?: string;
 }
 
 const ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";

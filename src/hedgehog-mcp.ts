@@ -251,6 +251,7 @@ export async function handleHedgehog(
         auth: "SuperGrok: OAuth at /joe/hedgehog (no JOE token paste). Computer: Authorization: Bearer or X-JOE-Token — issue at jettoptx.chat/support",
         augments: "00–09 JETT Augments",
         search06Tools: ["jett_docs_search", "jett_augment_lookup", "jett_edge_diagnose"],
+        publicTools: MCP_TOOLS.map((t) => t.name),
         docs: "https://docs.jettoptx.dev",
       },
       200,
