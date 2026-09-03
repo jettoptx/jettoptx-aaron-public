@@ -24,6 +24,11 @@ CORS_PROD_DOMAINS = "https://*.jettoptics.ai,https://*.jettoptx.chat,https://jet
 #   CF_ACCESS_CLIENT_ID      — optional; Cloudflare Access service token (with SECRET below)
 #   CF_ACCESS_CLIENT_SECRET  — optional; both required for Access headers on SpacetimeDB fetches
 #   XAI_API_KEY              — optional; prefer keeping model keys on origin AARON
+#   HEDGEHOG_INBOX_URL       — optional; message_joe webhook (HTTPS). Pair with KEY.
+#   HEDGEHOG_INBOX_KEY       — optional; Bearer for the inbox POST. Never commit.
+#   JOE_INBOX_URL            — optional alias for HEDGEHOG_INBOX_URL
+#   JOE_INBOX_KEY            — optional alias for HEDGEHOG_INBOX_KEY
+#   If inbox URL+key are unset, message_joe still acks and does not wake Joe.
 
 [limits]
 cpu_ms = 300_000
