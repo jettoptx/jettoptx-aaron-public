@@ -10,7 +10,7 @@
     "tail": "wrangler tail",
     "types": "wrangler types",
     "typecheck": "tsc --noEmit",
-    "test": "tsx src/jettchat-census.test.ts && tsx src/joe-hedgehog.test.ts && tsx src/joe-mcp.test.ts && tsx src/joe-ore.test.ts && tsx src/x402-catalog.test.ts && tsx src/supergrok-oauth.test.ts && tsx src/faucet-kill-switch.test.ts && tsx src/origin-mutator-kill-switch.test.ts"
+    "test": "tsx src/lib/cors.test.ts && tsx src/jettchat-census.test.ts && tsx src/joe-hedgehog.test.ts && tsx src/joe-mcp.test.ts && tsx src/joe-ore.test.ts && tsx src/x402-catalog.test.ts && tsx src/supergrok-oauth.test.ts && tsx src/faucet-kill-switch.test.ts && tsx src/origin-mutator-kill-switch.test.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250611.0",
