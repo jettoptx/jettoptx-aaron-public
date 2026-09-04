@@ -22,7 +22,7 @@ const CODE_TTL_SEC = 120;
 const CLIENT_TTL_SEC = 365 * 24 * 3600;
 const CSRF_TTL_SEC = 600;
 
-type JwtTyp = "oauth-client" | "oauth-code" | "oauth-at" | "oauth-rt";
+type JwtTyp = "oauth-client" | "oauth-code" | "oauth-at" | "oauth-rt" | "oauth-csrf";
 
 interface JwtPayload {
   typ: JwtTyp;
@@ -277,7 +277,11 @@ async function authorizeGet(
     return authorizeErrorHtml(cors, parsed.error, parsed.description);
   }
 
-  const csrf = crypto.randomUUID();
+  const csrfNonce = crypto.randomUUID();
+  const csrf = await mintConsentCsrf(parsed, env, url.origin, csrfNonce);
+  if (!csrf) {
+    return authorizeErrorHtml(cors, "temporarily_unavailable", "OAuth signing key is not configured");
+  }
   const html = consentHtml(parsed, csrf);
   const headers = new Headers(cors);
   headers.set("Content-Type", "text/html; charset=utf-8");
@@ -287,9 +291,11 @@ async function authorizeGet(
     "Content-Security-Policy",
     "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
   );
+  // Cookie is best-effort for first-party browsers. Grok's embedded webview is
+  // third-party and will not return it; Approve authenticates the signed form field.
   applyCsrfCookies(headers, {
     secure: url.protocol === "https:",
-    value: csrf,
+    value: csrfNonce,
     maxAge: CSRF_TTL_SEC,
     hostname: url.hostname,
   });
@@ -306,9 +312,11 @@ async function authorizePost(
 ): Promise<Response> {
   const form = await readForm(request);
   const formCsrf = form.get("csrf_token") ?? "";
-  // Match any JOE_OAUTH_CSRF value. Stale Path=/ or host-only leftovers from
-  // earlier deploys can appear first in Cookie; first-wins would false-mismatch.
-  if (!formCsrf || !csrfCookieMatches(request, formCsrf)) {
+  // Cookie is not required. Embedded Grok / ITP / third-party cookie blocking
+  // drop JOE_OAUTH_CSRF even with SameSite=None; Secure; Path=/oauth. Approve
+  // succeeds only when the hidden form field is a live HMAC-signed oauth-csrf
+  // JWT bound to this authorize request. Cookie-only / unsigned form fail.
+  if (!(await verifyConsentCsrf(formCsrf, form, env, origin))) {
     return authorizeErrorHtml(cors, "invalid_request", "CSRF token mismatch");
   }
   if (form.get("approve") !== "1") {
@@ -784,38 +792,82 @@ const CSRF_COOKIE_NAME = "JOE_OAUTH_CSRF";
 /** Form GET+POST are /oauth/authorize. Do not send this cookie to /joe/ore or /mcp. */
 const CSRF_COOKIE_PATH = "/oauth";
 
-function readCookieValues(request: Request, name: string): string[] {
-  const header = request.headers.get("Cookie") ?? "";
-  const values: string[] = [];
-  for (const part of header.split(";")) {
-    const [k, ...rest] = part.trim().split("=");
-    if (k === name) {
-      const value = rest.join("=");
-      if (value) values.push(value);
-    }
-  }
-  return values;
+/**
+ * Consent CSRF is a hidden form field: HMAC-JWT typ=oauth-csrf signed with
+ * existing Worker material (MCP_OAUTH_SIGNING_KEY, else MCP_API_KEY — no new
+ * required secret). Payload is TTL (exp) + client_id + redirect_uri + state +
+ * nonce. Grok's iPhone embedded webview is third-party and will not return
+ * JOE_OAUTH_CSRF even with SameSite=None; Secure; Path=/oauth. Approve
+ * therefore must not require the Cookie header.
+ *
+ * The cookie is still set as best-effort for first-party browsers (HTTPS
+ * SameSite=None; Secure; Path=/oauth; Domain=mcp.jettoptics.ai host-only,
+ * never .jettoptics.ai). GET expires leftover Path=/ cookies. Cookie-only
+ * POSTs are rejected. Forged / expired / mismatched client_id|redirect_uri|state fail.
+ *
+ * Authentik / Google subscriber CSRF is origin-side (AstroJOE / :8811).
+ */
+async function mintConsentCsrf(
+  parsed: AuthorizeOk,
+  env: GatewayEnv,
+  origin: string,
+  nonce: string,
+): Promise<string | null> {
+  const now = Math.floor(Date.now() / 1000);
+  return signJwt(
+    {
+      typ: "oauth-csrf",
+      iat: now,
+      exp: now + CSRF_TTL_SEC,
+      iss: origin,
+      cid: parsed.clientId,
+      uri: parsed.redirectUri,
+      state: parsed.state ?? "",
+      nonce,
+    },
+    env,
+    origin,
+  );
 }
 
-function csrfCookieMatches(request: Request, formCsrf: string): boolean {
-  return readCookieValues(request, CSRF_COOKIE_NAME).includes(formCsrf);
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
+function claimString(payload: JwtPayload, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" ? value : null;
+}
+
+async function verifyConsentCsrf(
+  formCsrf: string,
+  form: URLSearchParams,
+  env: GatewayEnv,
+  origin: string,
+): Promise<boolean> {
+  if (!formCsrf) return false;
+  const payload = await verifyJwt(formCsrf, env, origin);
+  if (!payload || payload.typ !== "oauth-csrf") return false;
+  const nonce = claimString(payload, "nonce");
+  const cid = claimString(payload, "cid");
+  const uri = claimString(payload, "uri");
+  const state = claimString(payload, "state");
+  if (!nonce || !cid || !uri || state === null) return false;
+  return (
+    timingSafeEqual(cid, form.get("client_id") ?? "") &&
+    timingSafeEqual(uri, form.get("redirect_uri") ?? "") &&
+    timingSafeEqual(state, form.get("state") ?? "")
+  );
 }
 
 /**
- * Worker OAuth consent CSRF (authorize GET / POST /oauth/authorize).
- *
- * SuperGrok Approve is an embedded cross-site POST. SameSite=Lax is not sent
- * on that POST (GET consent renders; POST then mismatches). HTTPS uses
- * SameSite=None; Secure. HTTP localhost stays Lax (None without Secure is rejected).
- *
- * Path=/oauth covers GET and POST /oauth/authorize (form action) and is not
- * sent to /joe/ore, /mcp, or other doors.
- *
+ * Best-effort first-party cookie (not the Approve authenticator).
+ * HTTPS: SameSite=None; Secure. HTTP localhost: Lax.
+ * Path=/oauth covers GET+POST /oauth/authorize; not sent to /joe/ore or /mcp.
  * Host-scoped: Domain=mcp.jettoptics.ai only on that host. Never .jettoptics.ai.
- * GET also expires leftover Path=/ cookies (host-only and Domain=mcp) so a
- * retry does not require clearing cookies. POST matches any same-name value.
- *
- * Authentik / Google subscriber CSRF is origin-side (AstroJOE / :8811).
  */
 function csrfCookie(opts: {
   secure: boolean;
