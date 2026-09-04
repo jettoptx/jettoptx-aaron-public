@@ -85,6 +85,8 @@ AARON routes (`/session`, `/verify`, `/gaze`, `/x402/v1/*`, `/orphan`, …) are 
 
 **Edge x402 catalog (not proxied):** `GET /x402` returns the faucet catalog (`5ct4…` / `jtxfaucet.sol`) for `chat`, `gaze_analyze`, `task`, and `orphan_donate` only. `prima_title` was removed (Josh 2026-09-03). Payable service paths (`/x402/v1/*`, `/orphan/402`) stay origin-proxied — do not flip them off `5ct4`.
 
+**Emergency faucet kill-switch (not proxied):** `POST`/`GET` `https://aaron.jettoptics.ai/faucet/claim` and `/faucet/sol` (optional trailing slash) return **`401`** `{error:"faucet temporarily disabled"}` at the Worker. No `AARON_ORIGIN` proxy, no chain call. Wrangler zone routes attach `aaron.jettoptics.ai/faucet/claim*` and `aaron.jettoptics.ai/faucet/sol*` only — not `aaron.jettoptics.ai/*`. Exact `/docs`, `/redoc`, `/openapi.json` on aaron also `401` (no host-wide steal; `/docs/oauth2-redirect` stays origin-side). This is an emergency edge block. Origin **joe-aaron-router** still needs auth-gate / rate-limit / sanitize as the durable fix.
+
 SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
 
 Issue developer tokens via DOJO / support at [jettoptx.chat](https://jettoptx.chat).

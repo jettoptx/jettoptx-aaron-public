@@ -20,6 +20,7 @@ const AARON_PATHS = [
   // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/ore — JOE-gated in index.ts, then proxyToAaron. Helius stays on origin.
+  // Do not add /faucet — emergency 401 kill-switch in index.ts; never proxy claim/sol.
 ];
 
 export function isAaronPath(pathname: string): boolean {
