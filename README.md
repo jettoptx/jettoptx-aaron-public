@@ -52,7 +52,6 @@ That OAuth access token does **not** unlock `/joe/ore`, `/joe/mcp` proxy, JettCh
 
 ## Auth
 
-MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe/ore/rpc`, `GET /joe/ore/subscribe`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`, except SuperGrok OAuth on `/joe/hedgehog` and `/mcp` (see above). Public without a token: `/health`, `/.well-known/joe-gateway`, `/.well-known/oauth-*`, `/oauth/*`, and `GET /specs/prima-depin-job.json`.
 
 **Joe/mcp (Computer AddMcpServer only):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/mcp` and `/joe/mcp/sse`. Auth is **header-only** — `Authorization: Bearer` or `X-JOE-Token`. No token in the URL (`?token=` / `?key=` → `401`). Missing header → `401` (no proxy); a phone sheet cannot auth. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. **Not** Hedgehog `/mcp`. First-match before `isHedgehogPath` / `isAaronPath`.
 
@@ -87,18 +86,13 @@ AARON routes (`/session`, `/verify`, `/gaze`, `/x402/v1/*`, `/orphan`, …) are 
 
 | Path | Unauth | payTo | After settle |
 |------|--------|-------|--------------|
-| `GET /x402` | 200 catalog | top-level `5ct4…` (faucet). `prima_title` dest/`payTo` is `GtAk…` (`astro.knots.sol`) | — |
-| `GET /x402/prima_title` | **402** (never 404) | `GtAkS5tYaqi6XQrinuFyqKQkK29SFQsUY9gQ2XpLXLwq` only | signed meter `kind: jett.primaTitle.v0` (operator Prima, handle augment, wallet `DQbS…`). Does **not** grant NCL Voyage minutes, Starlink bytes, boat SSID, or passenger location |
 
-Price for `prima_title` reuses live catalog `task`: `priceUsdc` 0.05 / `priceAtomic` 50000. Preferred live door: `https://aaron.jettoptics.ai/x402/prima_title` (also on `mcp.jettoptics.ai` if this Worker is the street). Do not flip chat / gaze_analyze / task / orphan_donate off `5ct4`.
 
 **Public marketplace job spec (not proxied, never 402):**
 
 | Path | Unauth | Headers | Body |
 |------|--------|---------|------|
-| `GET /specs/prima-depin-job.json` | **200** `application/json` | no `payTo`, no `X-Pay-To` | exact `agenc.marketplace.jobSpec` JSON |
 
-Live door: `https://aaron.jettoptics.ai/specs/prima-depin-job.json` (mirror on `mcp.jettoptics.ai`). This is the JOB-SPEC URI for agenc.ag/create — not the 402 title.
 
 SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
 
@@ -185,7 +179,6 @@ Client  →  Cloudflare Worker (this repo)
               ├── /.well-known/oauth-* + /oauth/* → public MCP OAuth (DCR + PKCE)
               ├── POST/GET /joe/ore/rpc + GET /joe/ore/subscribe → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
-              ├── GET /specs/prima-depin-job.json → public 200 JSON (never 402; not proxied)
               ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
               └── /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
 ```

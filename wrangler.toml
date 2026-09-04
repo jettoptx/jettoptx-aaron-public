@@ -49,19 +49,4 @@ zone_name = "jettoptics.ai"
 pattern = "aaron.jettoptics.ai/x402/"
 zone_name = "jettoptics.ai"
 
-[[routes]]
-pattern = "aaron.jettoptics.ai/x402/prima_title"
-zone_name = "jettoptics.ai"
-
-[[routes]]
-pattern = "aaron.jettoptics.ai/x402/prima_title/"
-zone_name = "jettoptics.ai"
-
 # Public JOB-SPEC URI for agenc.ag/create. Exact paths only — never 402.
-[[routes]]
-pattern = "aaron.jettoptics.ai/specs/prima-depin-job.json"
-zone_name = "jettoptics.ai"
-
-[[routes]]
-pattern = "aaron.jettoptics.ai/specs/prima-depin-job.json/"
-zone_name = "jettoptics.ai"
