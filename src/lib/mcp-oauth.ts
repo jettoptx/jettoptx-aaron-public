@@ -365,17 +365,28 @@ async function authorizePost(
     return authorizeErrorHtml(cors, "temporarily_unavailable", "OAuth signing key is not configured");
   }
 
+  // Grok's iPhone embedded webview swallows a bare 302/303 after this
+  // cross-site form POST (Approve succeeds; the sheet hangs with no
+  // CSRF page and no visible navigation). Return HTML 200 that self-navigates.
+  const redirectUrl = redirectWithCode(parsed.redirectUri, code, parsed.state);
   const headers = new Headers(cors);
-  headers.set("Location", redirectWithCode(parsed.redirectUri, code, parsed.state));
+  headers.set("Location", redirectUrl);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Cache-Control", "no-store");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set(
+    "Content-Security-Policy",
+    "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'",
+  );
   applyCsrfCookies(headers, {
     secure: origin.startsWith("https"),
     value: "",
     maxAge: 0,
     hostname: new URL(origin).hostname,
   });
-  headers.set("Cache-Control", "no-store");
   headers.set("X-Request-ID", requestId);
-  return new Response(null, { status: 302, headers });
+  return new Response(authorizeRedirectHtml(redirectUrl), { status: 200, headers });
 }
 
 async function tokenPost(
@@ -936,6 +947,45 @@ function authorizeErrorHtml(cors: Headers, error: string, description: string): 
   );
 }
 
+/**
+ * Post-Approve bounce page. Location is set for clients that read it, but
+ * Grok's webview must not depend on following 302. Meta refresh + top-level
+ * JS + a visible Continue link all use the same already-validated redirect URL.
+ */
+function authorizeRedirectHtml(redirectUrl: string): string {
+  const href = escapeHtml(redirectUrl);
+  const jsUrl = escapeJsString(redirectUrl);
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="refresh" content="0;url=${href}">
+  <title>Returning to SuperGrok</title>
+  <style>
+    body{font-family:system-ui,sans-serif;margin:0;padding:1.5rem;background:#0b0f14;color:#e8eef6}
+    main{max-width:28rem;margin:0 auto}
+    h1{font-size:1.35rem}
+    p{line-height:1.45;color:#c5d0dc}
+    a{display:block;width:100%;box-sizing:border-box;padding:.9rem;border-radius:.6rem;background:#f4c15d;color:#1a1408;font-weight:700;font-size:1rem;text-align:center;text-decoration:none}
+    .meta{font-size:.8rem;color:#8b97a6;word-break:break-all}
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Returning to SuperGrok</h1>
+    <p>Approved. Continue if this sheet does not close.</p>
+    <p><a href="${href}" rel="noreferrer">Continue</a></p>
+    <p class="meta">${href}</p>
+  </main>
+  <script>
+window.top.location = ${jsUrl};
+window.location.replace(${jsUrl});
+  </script>
+</body>
+</html>`;
+}
+
 function consentHtml(parsed: AuthorizeOk, csrf: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -991,4 +1041,9 @@ function escapeHtml(value: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+/** JSON string literal safe to embed in a <script> (no </script> breakout). */
+function escapeJsString(value: string): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e").replace(/&/g, "\\u0026");
 }
