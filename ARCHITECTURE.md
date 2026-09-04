@@ -52,6 +52,7 @@ Full AARON backend (FastAPI on Jetson), mesh credentials, and operator comms are
 - SuperGrok custom connectors use OAuth 2.1 (PKCE S256, DCR) on `/joe/hedgehog`; those tokens never authorize ore / mesh / x402  
 - AARON proxy paths (including `/x402/v1/*`) remain ungated at the edge; origin enforces payment/auth
 - Emergency edge kill-switch: `/faucet/claim` and `/faucet/sol` (and exact `/docs`, `/redoc`, `/openapi.json`) return 401 and never proxy. Zone routes are path-exact — the rest of `aaron.jettoptics.ai` stays origin. Durable auth-gate belongs on joe-aaron-router.
+- Emergency leftover-mutator kill-switch: `/jett/totp/enroll` (and verify / gaze/analyze / claim / handshake start+done / hermesync/pair / challenge/scanned / audit/devnet) return 401 and never proxy. `/session`, `/jett/totp/challenge`, `/jett/challenge/create` stay origin/bootstrap.
 - SHIELD4 X OAuth allowlist lives in Worker secret `SHIELD4_ALLOWLIST_JSON` (fail-closed when empty)  
 - Report vulnerabilities: **joe@jettoptics.ai** (see [SECURITY.md](./SECURITY.md))  
 - On-chain upgrade authority: Squads vault `9Wss…` — see [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses)

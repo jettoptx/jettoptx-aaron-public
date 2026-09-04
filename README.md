@@ -87,6 +87,8 @@ AARON routes (`/session`, `/verify`, `/gaze`, `/x402/v1/*`, `/orphan`, …) are 
 
 **Emergency faucet kill-switch (not proxied):** `POST`/`GET` `https://aaron.jettoptics.ai/faucet/claim` and `/faucet/sol` (optional trailing slash) return **`401`** `{error:"faucet temporarily disabled"}` at the Worker. No `AARON_ORIGIN` proxy, no chain call. Wrangler zone routes attach `aaron.jettoptics.ai/faucet/claim*` and `aaron.jettoptics.ai/faucet/sol*` only — not `aaron.jettoptics.ai/*`. Exact `/docs`, `/redoc`, `/openapi.json` on aaron also `401` (no host-wide steal; `/docs/oauth2-redirect` stays origin-side). This is an emergency edge block. Origin **joe-aaron-router** still needs auth-gate / rate-limit / sanitize as the durable fix.
 
+**Emergency origin-mutator kill-switch (not proxied):** leftover unauth aaron mutators return **`401`** `{error:"unauthorized — temporarily disabled"}` at the Worker (totp enroll fire). Exact doors: `/jett/totp/enroll`, `/jett/totp/verify`, `/gaze/analyze`, `/poa/claim`, `/donations/claim`, `/handshake/start`, `/handshake/done`, `/hermesync/pair`, `/jett/challenge/scanned`, `/orphan/claim`, `/audit/devnet` (optional trailing slash; GET+POST). No `AARON_ORIGIN` proxy. Wrangler zone routes attach those `aaron.jettoptics.ai/<path>*` patterns only — not `aaron.jettoptics.ai/*`. **Not** blocked: `/session`, `/jett/totp/challenge`, `/jett/challenge/create` (login bootstrap). Durable auth-gate still belongs on **joe-aaron-router**.
+
 SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
 
 Issue developer tokens via DOJO / support at [jettoptx.chat](https://jettoptx.chat).

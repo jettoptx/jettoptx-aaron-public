@@ -82,3 +82,52 @@ zone_name = "jettoptics.ai"
 pattern = "aaron.jettoptics.ai/openapi.json"
 zone_name = "jettoptics.ai"
 
+# Emergency leftover-mutator kill-switch (totp enroll fire). path* only —
+# do NOT use aaron.jettoptics.ai/* or /jett/* / /gaze* / /handshake* /
+# /orphan* (would steal login bootstrap and x402 doors).
+# Leave /session, /jett/totp/challenge, /jett/challenge/create on origin.
+# No new DNS records and no custom_domain.
+[[routes]]
+pattern = "aaron.jettoptics.ai/jett/totp/enroll*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/jett/totp/verify*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/gaze/analyze*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/poa/claim*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/donations/claim*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/handshake/start*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/handshake/done*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/hermesync/pair*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/jett/challenge/scanned*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/orphan/claim*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/audit/devnet*"
+zone_name = "jettoptics.ai"
+
