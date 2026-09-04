@@ -49,3 +49,36 @@ zone_name = "jettoptics.ai"
 pattern = "aaron.jettoptics.ai/x402/"
 zone_name = "jettoptics.ai"
 
+# Emergency faucet drain kill-switch. claim* / sol* only — do NOT use
+# aaron.jettoptics.ai/* or /faucet/* (would steal unrelated aaron routes).
+# No new DNS records and no custom_domain.
+[[routes]]
+pattern = "aaron.jettoptics.ai/faucet/claim*"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/faucet/sol*"
+zone_name = "jettoptics.ai"
+
+# Exact FastAPI docs doors on aaron (no host-wide steal). /docs/oauth2-redirect
+# stays origin-side for the joe-aaron-router durable PR.
+[[routes]]
+pattern = "aaron.jettoptics.ai/docs"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/docs/"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/redoc"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/redoc/"
+zone_name = "jettoptics.ai"
+
+[[routes]]
+pattern = "aaron.jettoptics.ai/openapi.json"
+zone_name = "jettoptics.ai"
+
