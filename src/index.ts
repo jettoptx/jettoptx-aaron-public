@@ -12,6 +12,12 @@
  *
  * Exception (edge, not proxied): GET /x402 catalog (faucet 5ct4 SKUs only).
  * prima_title removed (Josh 2026-09-03).
+ *
+ * Emergency (edge, not proxied): POST/GET /faucet/claim and /faucet/sol
+ * return 401 {error:"faucet temporarily disabled"} — no AARON_ORIGIN proxy,
+ * no chain. Zone routes attach aaron.jettoptics.ai/faucet/claim* and
+ * aaron.jettoptics.ai/faucet/sol* only (not the whole aaron host).
+ * Origin joe-aaron-router still needs auth-gate/rate-limit/sanitize.
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -31,6 +37,12 @@ import {
 } from "./lib/mcp-oauth";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
 import { handleX402Catalog, isX402CatalogPath } from "./x402-catalog";
+import {
+  handleAaronDocsKillSwitch,
+  handleFaucetKillSwitch,
+  isAaronDocsKillSwitchPath,
+  isFaucetKillSwitchPath,
+} from "./faucet-kill-switch";
 
 export default {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -44,6 +56,17 @@ export default {
     }
 
     try {
+      // Emergency faucet kill-switch — first-match BEFORE any proxy / catalog.
+      // GET+POST /faucet/claim and /faucet/sol (optional slash). No chain, no origin.
+      if (isFaucetKillSwitchPath(url.pathname)) {
+        return handleFaucetKillSwitch(request, env, requestId);
+      }
+
+      // Exact aaron FastAPI docs doors (optional). Zone routes are path-exact.
+      if (isAaronDocsKillSwitchPath(url.pathname)) {
+        return handleAaronDocsKillSwitch(request, env, requestId);
+      }
+
       // Discord / mobile MOJO deep-link (edge-only; not proxied to origin)
       if (isMojoDeeplinkPath(url.pathname)) {
         return handleMojoDeeplink(request, env, requestId);
