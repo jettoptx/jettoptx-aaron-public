@@ -95,6 +95,35 @@ function csrfFromHtml(html: string): string {
   return match?.[1] ?? "";
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/** Successful Approve: HTML 200 bounce (not a bare 302) so Grok's webview can navigate. */
+async function assertApproveRedirectHtml(res: Response, redirectUri: string): Promise<string> {
+  assert(res.status === 200, `approve → HTML 200 (not bare 302), got ${res.status}`);
+  assert((res.headers.get("Content-Type") ?? "").includes("text/html"), "approve Content-Type is HTML");
+  const loc = res.headers.get("Location") ?? "";
+  assert(loc.startsWith(`${redirectUri}?`) || loc.startsWith(`${redirectUri}&`), `Location redirect URI, got ${loc}`);
+  assert(loc.includes("code="), "Location includes authorization code");
+  const html = await res.text();
+  assert(html.includes(redirectUri), "HTML body contains the redirect URI");
+  assert(html.includes(escapeHtml(loc)), "HTML escapes the full redirect URL");
+  assert(/http-equiv=["']refresh["']/i.test(html), "meta refresh fallback");
+  assert(html.includes(`content="0;url=${escapeHtml(loc)}"`), "meta refresh targets the exact redirect URL");
+  assert(html.includes("window.top.location"), "top-level JS assigns window.top.location");
+  assert(html.includes("window.location.replace"), "JS calls window.location.replace");
+  assert(/<a[^>]+href="[^"]+"[^>]*>Continue<\/a>/i.test(html), "visible Continue link");
+  assert(html.includes(`href="${escapeHtml(loc)}"`), "Continue href is the exact redirect URL");
+  assert(!html.includes("CSRF token mismatch"), "success page is not the CSRF error page");
+  return loc;
+}
+
 function decodeJwtPayload(token: string): Record<string, unknown> {
   const parts = token.split(".");
   assert(parts.length === 3, `signed CSRF is a JWT, got ${token.slice(0, 48)}`);
@@ -243,9 +272,7 @@ async function completeOAuth(): Promise<string> {
     env,
     ctx,
   );
-  assert(noCookie.status === 302, `cookie-absent + signed form CSRF → 302, got ${noCookie.status}`);
-  const loc = noCookie.headers.get("Location") ?? "";
-  assert(loc.startsWith(`${redirectUri}?`), `redirect to SuperGrok callback, got ${loc}`);
+  const loc = await assertApproveRedirectHtml(noCookie, redirectUri);
   const redirected = new URL(loc);
   const code = redirected.searchParams.get("code");
   assert(code, "authorization code");
@@ -344,7 +371,11 @@ async function assertConsentCsrfMatrix(): Promise<void> {
 
   const forged = await postAuthorize({ ...base, csrf_token: "forged-not-signed" });
   assert(forged.status === 400, `forged form CSRF → 400, got ${forged.status}`);
-  assert((await forged.text()).includes("CSRF token mismatch"), "forged mismatch copy");
+  const forgedHtml = await forged.text();
+  assert(forgedHtml.includes("CSRF token mismatch"), "forged mismatch copy");
+  assert(forgedHtml.includes("Cannot connect"), "forged CSRF is the error page");
+  assert(!forgedHtml.includes("window.location.replace"), "forged CSRF is not the approve bounce page");
+  assert(!forgedHtml.includes("http-equiv"), "forged CSRF has no meta refresh");
 
   const tampered = `${formCsrf.slice(0, -2)}aa`;
   const tamperedRes = await postAuthorize({ ...base, csrf_token: tampered });
@@ -397,16 +428,14 @@ async function assertConsentCsrfMatrix(): Promise<void> {
   );
 
   const grokWebview = await postAuthorize({ ...base, csrf_token: formCsrf });
-  assert(grokWebview.status === 302, `valid signed form, no cookie → 302, got ${grokWebview.status}`);
-  const grokLoc = grokWebview.headers.get("Location") ?? "";
-  assert(grokLoc.startsWith(`${redirectUri}?`), `Grok-webview approve redirects, got ${grokLoc}`);
+  await assertApproveRedirectHtml(grokWebview, redirectUri);
 
   const leftoverOk = await postAuthorize(
     { ...base, csrf_token: formCsrf },
     "JOE_OAUTH_CSRF=stale-leftover-path-root",
   );
   // Second approve of the same consent is fine (stateless JWT). Leftover cookie must not block.
-  assert(leftoverOk.status === 302, `stale cookie + signed form → 302, got ${leftoverOk.status}`);
+  await assertApproveRedirectHtml(leftoverOk, redirectUri);
 }
 
 async function run(): Promise<void> {
@@ -720,9 +749,7 @@ async function run(): Promise<void> {
       env,
       ctx,
     );
-    assert(cimdApproved.status === 302, `CIMD approve → 302, got ${cimdApproved.status}`);
-    const cimdLoc = cimdApproved.headers.get("Location") ?? "";
-    assert(cimdLoc.startsWith(`${cimdRedirect}?`), "CIMD redirects to SuperGrok callback");
+    const cimdLoc = await assertApproveRedirectHtml(cimdApproved, cimdRedirect);
     const cimdCode = new URL(cimdLoc).searchParams.get("code");
     assert(cimdCode, "CIMD authorization code");
     const cimdToken = await worker.fetch(
