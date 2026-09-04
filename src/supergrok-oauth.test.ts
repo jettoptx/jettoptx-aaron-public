@@ -795,7 +795,13 @@ async function run(): Promise<void> {
       env,
       ctx,
     );
-    assert(x402.status === 402, `OAuth token must not ungate x402 chat, got ${x402.status}`);
+    // Edge proxies /x402/v1/* ungated; origin enforces payment. OAuth must not serve local MCP tools.
+    assert(
+      fetchCalls.some((c) => c.url.startsWith(`${AARON_ORIGIN}/x402/v1/chat`)),
+      "OAuth token must not ungate x402 chat into local MCP; must proxy to origin",
+    );
+    const x402Body = await x402.text();
+    assert(!x402Body.includes("message_joe"), "OAuth must not return MCP tools on x402 chat");
 
     const inboxUrl = "https://inbox.example.test/joe";
     const inboxEnv: GatewayEnv = {
