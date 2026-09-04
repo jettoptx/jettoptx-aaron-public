@@ -52,6 +52,7 @@ That OAuth access token does **not** unlock `/joe/ore`, `/joe/mcp` proxy, JettCh
 
 ## Auth
 
+MCP paths (`/mcp`, `GET/POST /joe/mcp`, `POST/GET /joe/hedgehog`, `POST/GET /joe/ore/rpc`, `GET /joe/ore/subscribe`, `GET /mcp/jettchat`, and non-public HEDGEHOG routes) are gated by `validateJoeToken` in `src/lib/auth-gate.ts`, except SuperGrok OAuth on `/joe/hedgehog` and `/mcp` (see above). Public without a token: `/health`, `/.well-known/joe-gateway`, `/.well-known/oauth-*`, `/oauth/*`.
 
 **Joe/mcp (Computer AddMcpServer only):** `GET`/`POST` `https://mcp.jettoptics.ai/joe/mcp` and `/joe/mcp/sse`. Auth is **header-only** — `Authorization: Bearer` or `X-JOE-Token`. No token in the URL (`?token=` / `?key=` → `401`). Missing header → `401` (no proxy); a phone sheet cannot auth. On success the Worker `proxyToAaron` to `AARON_ORIGIN`. **Not** in ungated `AARON_PATHS`. **Not** Hedgehog `/mcp`. First-match before `isHedgehogPath` / `isAaronPath`.
 
@@ -82,17 +83,7 @@ This path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, a
 
 AARON routes (`/session`, `/verify`, `/gaze`, `/x402/v1/*`, `/orphan`, …) are **proxied ungated** by this Worker — payment and origin auth remain on the Jetson AARON router (USDC settlement → `jtxfaucet.sol` / `5ct4…`).
 
-**Edge x402 exceptions (not proxied):**
-
-| Path | Unauth | payTo | After settle |
-|------|--------|-------|--------------|
-
-
-**Public marketplace job spec (not proxied, never 402):**
-
-| Path | Unauth | Headers | Body |
-|------|--------|---------|------|
-
+**Edge x402 catalog (not proxied):** `GET /x402` returns the faucet catalog (`5ct4…` / `jtxfaucet.sol`) for `chat`, `gaze_analyze`, `task`, and `orphan_donate` only. `prima_title` was removed (Josh 2026-09-03). Payable service paths (`/x402/v1/*`, `/orphan/402`) stay origin-proxied — do not flip them off `5ct4`.
 
 SpacetimeDB HTTP `/sql` has no parameter binding; values interpolated into SQL are charset-whitelisted (`twinId`) or hex-validated (`key_hash`) before use.
 
