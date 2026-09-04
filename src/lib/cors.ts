@@ -44,32 +44,61 @@ export interface GatewayEnv {
 
 const ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";
 
-export function getCorsHeaders(request: Request, env: GatewayEnv): Headers {
-  const origin = request.headers.get("Origin") || "";
-  const allowed = [
+/** Browser / MCP / x402 headers known public clients send. CF Access service-token headers stay server-side only. */
+const ALLOWED_HEADERS = [
+  "Content-Type",
+  "Authorization",
+  "X-Request-ID",
+  "X-JOE-Token",
+  "X-PAYMENT",
+  "PAYMENT-SIGNATURE",
+  "x-payment",
+  "MCP-Protocol-Version",
+  "Mcp-Session-Id",
+  "Last-Event-ID",
+].join(", ");
+
+export function parseCorsAllowlist(env: Pick<GatewayEnv, "CORS_PROD_DOMAINS" | "CORS_DEV_DOMAINS">): string[] {
+  return [
     ...(env.CORS_PROD_DOMAINS || "").split(",").map((s) => s.trim()).filter(Boolean),
     ...(env.CORS_DEV_DOMAINS || "").split(",").map((s) => s.trim()).filter(Boolean),
   ];
+}
 
-  const allowOrigin = allowed.some((d) => {
-    if (d.includes("*")) {
-      const re = new RegExp("^" + d.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+/**
+ * True when `origin` matches a CORS_PROD_DOMAINS / CORS_DEV_DOMAINS entry.
+ * Exact entries require an exact Origin. Patterns may include `*` (e.g. https://*.jettoptics.ai, http://localhost:*).
+ */
+export function originMatchesAllowlist(origin: string, allowed: readonly string[]): boolean {
+  if (!origin) return false;
+  return allowed.some((pattern) => {
+    if (pattern.includes("*")) {
+      const re = new RegExp("^" + pattern.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
       return re.test(origin);
     }
-    return origin === d || origin.startsWith(d);
-  })
-    ? origin
-    : "*";
+    return origin === pattern;
+  });
+}
 
-  return new Headers({
-    "Access-Control-Allow-Origin": allowOrigin,
+export function getCorsHeaders(request: Request, env: GatewayEnv): Headers {
+  const origin = request.headers.get("Origin") || "";
+  const allowed = parseCorsAllowlist(env);
+  const headers = new Headers({
     "Access-Control-Allow-Methods": ALLOWED_METHODS,
-    "Access-Control-Allow-Headers":
-      "Content-Type, Authorization, X-Request-ID, X-JOE-Token, CF-Access-Client-Id, CF-Access-Client-Secret, X-PAYMENT, PAYMENT-SIGNATURE, x-payment, MCP-Protocol-Version, Mcp-Session-Id, Last-Event-ID",
+    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
     "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id, X-Request-ID",
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   });
+
+  // Reflect ACAO only for allowlisted Origins. Missing / foreign Origins omit ACAO
+  // (never `*`) so browsers block while Origin-less API clients still work.
+  // Never pair Access-Control-Allow-Credentials: true with `*`.
+  if (originMatchesAllowlist(origin, allowed)) {
+    headers.set("Access-Control-Allow-Origin", origin);
+  }
+
+  return headers;
 }
 
 export function addRequestId(headers?: Headers): string {
