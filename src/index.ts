@@ -18,6 +18,13 @@
  * no chain. Zone routes attach aaron.jettoptics.ai/faucet/claim* and
  * aaron.jettoptics.ai/faucet/sol* only (not the whole aaron host).
  * Origin joe-aaron-router still needs auth-gate/rate-limit/sanitize.
+ *
+ * Emergency (edge, not proxied): leftover unauth origin mutators
+ * (POST/GET /jett/totp/enroll fire, plus verify / gaze/analyze / claims /
+ * handshake start+done / hermesync/pair / challenge/scanned / audit/devnet)
+ * return 401 {error:"unauthorized — temporarily disabled"} — no AARON_ORIGIN
+ * proxy. Login bootstrap /session, /jett/totp/challenge, /jett/challenge/create
+ * are not stolen. Zone routes are path* only (not aaron.jettoptics.ai/*).
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -43,6 +50,10 @@ import {
   isAaronDocsKillSwitchPath,
   isFaucetKillSwitchPath,
 } from "./faucet-kill-switch";
+import {
+  handleOriginMutatorKillSwitch,
+  isOriginMutatorKillSwitchPath,
+} from "./origin-mutator-kill-switch";
 
 export default {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -56,6 +67,13 @@ export default {
     }
 
     try {
+      // CRITICAL leftover unauth mutators (totp enroll fire) — first-match
+      // BEFORE faucet / catalog / any AARON_ORIGIN proxy. Exact paths only.
+      // Do not block /session, /jett/totp/challenge, /jett/challenge/create.
+      if (isOriginMutatorKillSwitchPath(url.pathname)) {
+        return handleOriginMutatorKillSwitch(request, env, requestId);
+      }
+
       // Emergency faucet kill-switch — first-match BEFORE any proxy / catalog.
       // GET+POST /faucet/claim and /faucet/sol (optional slash). No chain, no origin.
       if (isFaucetKillSwitchPath(url.pathname)) {
