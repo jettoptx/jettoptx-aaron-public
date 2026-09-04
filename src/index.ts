@@ -10,10 +10,8 @@
  * payment / auth on the Jetson AARON router (USDC → jtxfaucet.sol). Out of scope
  * for the JOE MCP token gate unless explicitly added later.
  *
- * Exception (edge, not proxied): GET /x402 catalog + GET /x402/prima_title.
- * prima_title payTo is GtAk (astro.knots.sol). Other x402 services stay 5ct4.
- *
- * Public JOB-SPEC (edge, not proxied, never 402): GET /specs/prima-depin-job.json.
+ * Exception (edge, not proxied): GET /x402 catalog (faucet 5ct4 SKUs only).
+ * prima_title removed (Josh 2026-09-03).
  */
 
 import type { GatewayEnv } from "./lib/cors";
@@ -32,13 +30,7 @@ import {
   verifyMcpAccessToken,
 } from "./lib/mcp-oauth";
 import { isMojoDeeplinkPath, handleMojoDeeplink } from "./mojo-deeplink";
-import {
-  handlePrimaTitle,
-  handleX402Catalog,
-  isPrimaTitlePath,
-  isX402CatalogPath,
-} from "./x402-prima-title";
-import { handlePrimaDepinJobSpec, isPrimaDepinJobSpecPath } from "./prima-depin-job-spec";
+import { handleX402Catalog, isX402CatalogPath } from "./x402-catalog";
 
 export default {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
@@ -57,17 +49,7 @@ export default {
         return handleMojoDeeplink(request, env, requestId);
       }
 
-      // GET /specs/prima-depin-job.json — public JOB-SPEC (200 JSON). Never 402. Never payTo.
-      if (isPrimaDepinJobSpecPath(url.pathname)) {
-        return handlePrimaDepinJobSpec(request, env, requestId);
-      }
-
-      // GET /x402/prima_title — edge 402 (payTo GtAk). First-match; never proxy (origin 404s).
-      if (isPrimaTitlePath(url.pathname)) {
-        return handlePrimaTitle(request, env, requestId);
-      }
-
-      // GET /x402 — catalog with existing four services + prima_title (dest GtAk).
+      // GET /x402 — faucet catalog only (chat / gaze / task / orphan). No prima_title.
       if (isX402CatalogPath(url.pathname)) {
         return handleX402Catalog(request, env, requestId);
       }
@@ -166,7 +148,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog (SuperGrok OAuth), /oauth/authorize, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402, /specs/prima-depin-job.json",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog (SuperGrok OAuth), /oauth/authorize, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402",
           requestId,
         },
         404,

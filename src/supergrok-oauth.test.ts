@@ -787,14 +787,15 @@ async function run(): Promise<void> {
 
     fetchCalls = [];
     const x402 = await worker.fetch(
-      new Request(`${ORIGIN}/x402/prima_title`, {
-        method: "GET",
-        headers: { Authorization: `Bearer ${access}` },
+      new Request(`${ORIGIN}/x402/v1/chat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+        body: "{}",
       }),
       env,
       ctx,
     );
-    assert(x402.status === 402, `OAuth token must not ungate x402 prima_title, got ${x402.status}`);
+    assert(x402.status === 402, `OAuth token must not ungate x402 chat, got ${x402.status}`);
 
     const inboxUrl = "https://inbox.example.test/joe";
     const inboxEnv: GatewayEnv = {
