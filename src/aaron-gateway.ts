@@ -12,7 +12,7 @@ const AARON_PATHS = [
   "/mint",
   "/handshake",
   // Payable JOE / x402 surface (USDC → jtxfaucet.sol).
-  // GET /x402 and GET /x402/prima_title are first-match edge handlers in index.ts.
+  // GET /x402 is a first-match edge handler in index.ts (faucet catalog).
   "/x402",
   "/orphan",
   "/.well-known/agent-card.json",
@@ -20,7 +20,6 @@ const AARON_PATHS = [
   // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/ore — JOE-gated in index.ts, then proxyToAaron. Helius stays on origin.
-  // Do not add /specs — public JOB-SPEC is first-match edge JSON in index.ts (never 402).
 ];
 
 export function isAaronPath(pathname: string): boolean {
