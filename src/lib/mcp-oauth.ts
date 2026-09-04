@@ -277,8 +277,8 @@ async function authorizeGet(
     return authorizeErrorHtml(cors, parsed.error, parsed.description);
   }
 
-  const csrfJti = crypto.randomUUID();
-  const csrf = await mintConsentCsrf(parsed, env, url.origin, csrfJti);
+  const csrfNonce = crypto.randomUUID();
+  const csrf = await mintConsentCsrf(parsed, env, url.origin, csrfNonce);
   if (!csrf) {
     return authorizeErrorHtml(cors, "temporarily_unavailable", "OAuth signing key is not configured");
   }
@@ -295,7 +295,7 @@ async function authorizeGet(
   // third-party and will not return it; Approve authenticates the signed form field.
   applyCsrfCookies(headers, {
     secure: url.protocol === "https:",
-    value: csrfJti,
+    value: csrfNonce,
     maxAge: CSRF_TTL_SEC,
     hostname: url.hostname,
   });
@@ -794,57 +794,36 @@ const CSRF_COOKIE_PATH = "/oauth";
 
 /**
  * Consent CSRF is a hidden form field: HMAC-JWT typ=oauth-csrf signed with
- * MCP_OAUTH_SIGNING_KEY / MCP_API_KEY, bound to client_id + redirect_uri +
- * PKCE challenge + resource + state. Grok's embedded webview is a third-party
- * context (Chrome/iOS ITP) and will not return JOE_OAUTH_CSRF even with
- * SameSite=None; Secure; Path=/oauth — including CHIPS-less cookies. Approve
+ * existing Worker material (MCP_OAUTH_SIGNING_KEY, else MCP_API_KEY — no new
+ * required secret). Payload is TTL (exp) + client_id + redirect_uri + state +
+ * nonce. Grok's iPhone embedded webview is third-party and will not return
+ * JOE_OAUTH_CSRF even with SameSite=None; Secure; Path=/oauth. Approve
  * therefore must not require the Cookie header.
  *
  * The cookie is still set as best-effort for first-party browsers (HTTPS
  * SameSite=None; Secure; Path=/oauth; Domain=mcp.jettoptics.ai host-only,
  * never .jettoptics.ai). GET expires leftover Path=/ cookies. Cookie-only
- * POSTs are rejected. Unsigned / forged / rebound form tokens are rejected.
+ * POSTs are rejected. Forged / expired / mismatched client_id|redirect_uri|state fail.
  *
  * Authentik / Google subscriber CSRF is origin-side (AstroJOE / :8811).
  */
-async function consentCsrfBind(
-  clientId: string,
-  redirectUri: string,
-  challenge: string,
-  resource: string,
-  state: string,
-): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(
-      `joe-oauth-csrf-bind-v1\n${clientId}\n${redirectUri}\n${challenge}\n${resource}\n${state}`,
-    ),
-  );
-  return b64url(new Uint8Array(digest));
-}
-
 async function mintConsentCsrf(
   parsed: AuthorizeOk,
   env: GatewayEnv,
   origin: string,
-  jti: string,
+  nonce: string,
 ): Promise<string | null> {
   const now = Math.floor(Date.now() / 1000);
-  const bind = await consentCsrfBind(
-    parsed.clientId,
-    parsed.redirectUri,
-    parsed.codeChallenge,
-    parsed.resource,
-    parsed.state ?? "",
-  );
   return signJwt(
     {
       typ: "oauth-csrf",
       iat: now,
       exp: now + CSRF_TTL_SEC,
       iss: origin,
-      bind,
-      jti,
+      cid: parsed.clientId,
+      uri: parsed.redirectUri,
+      state: parsed.state ?? "",
+      nonce,
     },
     env,
     origin,
@@ -858,6 +837,11 @@ function timingSafeEqual(a: string, b: string): boolean {
   return out === 0;
 }
 
+function claimString(payload: JwtPayload, key: string): string | null {
+  const value = payload[key];
+  return typeof value === "string" ? value : null;
+}
+
 async function verifyConsentCsrf(
   formCsrf: string,
   form: URLSearchParams,
@@ -867,16 +851,16 @@ async function verifyConsentCsrf(
   if (!formCsrf) return false;
   const payload = await verifyJwt(formCsrf, env, origin);
   if (!payload || payload.typ !== "oauth-csrf") return false;
-  const expected = typeof payload.bind === "string" ? payload.bind : "";
-  if (!expected) return false;
-  const actual = await consentCsrfBind(
-    form.get("client_id") ?? "",
-    form.get("redirect_uri") ?? "",
-    form.get("code_challenge") ?? "",
-    form.get("resource") ?? "",
-    form.get("state") ?? "",
+  const nonce = claimString(payload, "nonce");
+  const cid = claimString(payload, "cid");
+  const uri = claimString(payload, "uri");
+  const state = claimString(payload, "state");
+  if (!nonce || !cid || !uri || state === null) return false;
+  return (
+    timingSafeEqual(cid, form.get("client_id") ?? "") &&
+    timingSafeEqual(uri, form.get("redirect_uri") ?? "") &&
+    timingSafeEqual(state, form.get("state") ?? "")
   );
-  return timingSafeEqual(expected, actual);
 }
 
 /**

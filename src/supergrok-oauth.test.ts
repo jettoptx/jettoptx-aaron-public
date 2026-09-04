@@ -95,21 +95,60 @@ function csrfFromHtml(html: string): string {
   return match?.[1] ?? "";
 }
 
-function assertSignedCsrf(token: string): void {
+function decodeJwtPayload(token: string): Record<string, unknown> {
   const parts = token.split(".");
   assert(parts.length === 3, `signed CSRF is a JWT, got ${token.slice(0, 48)}`);
   const pad = parts[1].length % 4 === 0 ? "" : "=".repeat(4 - (parts[1].length % 4));
-  const json = JSON.parse(
+  return JSON.parse(
     new TextDecoder().decode(
       Uint8Array.from(
         atob(parts[1].replace(/-/g, "+").replace(/_/g, "/") + pad),
         (c) => c.charCodeAt(0),
       ),
     ),
-  ) as { typ?: string; bind?: string; exp?: number };
+  ) as Record<string, unknown>;
+}
+
+function assertSignedCsrf(token: string, expect?: { cid?: string; uri?: string; state?: string }): void {
+  const json = decodeJwtPayload(token);
   assert(json.typ === "oauth-csrf", `CSRF typ=oauth-csrf, got ${json.typ}`);
-  assert(typeof json.bind === "string" && json.bind.length > 10, "CSRF bind hash");
-  assert(typeof json.exp === "number" && json.exp > Date.now() / 1000, "CSRF not expired");
+  assert(typeof json.exp === "number" && json.exp > Date.now() / 1000, "CSRF TTL (exp) present and live");
+  assert(typeof json.cid === "string" && json.cid.length > 0, "CSRF payload includes client_id");
+  assert(typeof json.uri === "string" && json.uri.length > 0, "CSRF payload includes redirect_uri");
+  assert(typeof json.state === "string", "CSRF payload includes state");
+  assert(typeof json.nonce === "string" && json.nonce.length > 10, "CSRF payload includes nonce");
+  if (expect?.cid) assert(json.cid === expect.cid, "CSRF cid matches authorize client_id");
+  if (expect?.uri) assert(json.uri === expect.uri, "CSRF uri matches authorize redirect_uri");
+  if (expect?.state !== undefined) assert(json.state === expect.state, "CSRF state matches authorize state");
+}
+
+async function mintExpiredConsentCsrf(claims: {
+  cid: string;
+  uri: string;
+  state: string;
+}): Promise<string> {
+  const raw = env.MCP_API_KEY?.trim() ?? "";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`joe-mcp-oauth-v1:${raw}`));
+  const key = await crypto.subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const now = Math.floor(Date.now() / 1000);
+  const header = b64url(new TextEncoder().encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
+  const body = b64url(
+    new TextEncoder().encode(
+      JSON.stringify({
+        typ: "oauth-csrf",
+        iat: now - 700,
+        exp: now - 60,
+        iss: ORIGIN,
+        cid: claims.cid,
+        uri: claims.uri,
+        state: claims.state,
+        nonce: crypto.randomUUID(),
+      }),
+    ),
+  );
+  const data = `${header}.${body}`;
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(data));
+  return `${data}.${b64url(new Uint8Array(sig))}`;
 }
 
 function assertCsrfCookieAttrs(res: Response, host: string): void {
@@ -270,7 +309,7 @@ async function assertConsentCsrfMatrix(): Promise<void> {
   const html = await consent.text();
   const formCsrf = csrfFromHtml(html);
   const cookie = cookieFrom(consent);
-  assertSignedCsrf(formCsrf);
+  assertSignedCsrf(formCsrf, { cid: client.client_id, uri: redirectUri, state: "st-csrf" });
 
   const base = {
     approve: "1",
@@ -316,8 +355,33 @@ async function assertConsentCsrfMatrix(): Promise<void> {
     csrf_token: formCsrf,
     redirect_uri: "https://grok.com/oauth/other",
   });
-  assert(rebound.status === 400, `rebound redirect_uri → 400, got ${rebound.status}`);
-  assert((await rebound.text()).includes("CSRF token mismatch"), "rebind is CSRF mismatch");
+  assert(rebound.status === 400, `mismatched redirect_uri → 400, got ${rebound.status}`);
+  assert((await rebound.text()).includes("CSRF token mismatch"), "redirect_uri mismatch is CSRF fail");
+
+  const wrongClient = await postAuthorize({
+    ...base,
+    csrf_token: formCsrf,
+    client_id: `${client.client_id}-x`,
+  });
+  assert(wrongClient.status === 400, `mismatched client_id → 400, got ${wrongClient.status}`);
+  assert((await wrongClient.text()).includes("CSRF token mismatch"), "client_id mismatch is CSRF fail");
+
+  const wrongState = await postAuthorize({
+    ...base,
+    csrf_token: formCsrf,
+    state: "st-attacker",
+  });
+  assert(wrongState.status === 400, `mismatched state → 400, got ${wrongState.status}`);
+  assert((await wrongState.text()).includes("CSRF token mismatch"), "state mismatch is CSRF fail");
+
+  const expiredToken = await mintExpiredConsentCsrf({
+    cid: client.client_id,
+    uri: redirectUri,
+    state: "st-csrf",
+  });
+  const expired = await postAuthorize({ ...base, csrf_token: expiredToken });
+  assert(expired.status === 400, `expired signed CSRF → 400, got ${expired.status}`);
+  assert((await expired.text()).includes("CSRF token mismatch"), "expired CSRF fails");
 
   const cookieOnly = await postAuthorize(base, cookie);
   assert(cookieOnly.status === 400, `cookie alone without form CSRF → 400, got ${cookieOnly.status}`);
