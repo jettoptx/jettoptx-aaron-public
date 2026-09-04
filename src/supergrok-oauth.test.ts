@@ -90,6 +90,28 @@ function cookieFrom(res: Response): string {
   return "";
 }
 
+function csrfFromHtml(html: string): string {
+  const match = html.match(/name="csrf_token" value="([^"]+)"/);
+  return match?.[1] ?? "";
+}
+
+function assertSignedCsrf(token: string): void {
+  const parts = token.split(".");
+  assert(parts.length === 3, `signed CSRF is a JWT, got ${token.slice(0, 48)}`);
+  const pad = parts[1].length % 4 === 0 ? "" : "=".repeat(4 - (parts[1].length % 4));
+  const json = JSON.parse(
+    new TextDecoder().decode(
+      Uint8Array.from(
+        atob(parts[1].replace(/-/g, "+").replace(/_/g, "/") + pad),
+        (c) => c.charCodeAt(0),
+      ),
+    ),
+  ) as { typ?: string; bind?: string; exp?: number };
+  assert(json.typ === "oauth-csrf", `CSRF typ=oauth-csrf, got ${json.typ}`);
+  assert(typeof json.bind === "string" && json.bind.length > 10, "CSRF bind hash");
+  assert(typeof json.exp === "number" && json.exp > Date.now() / 1000, "CSRF not expired");
+}
+
 function assertCsrfCookieAttrs(res: Response, host: string): void {
   const all = setCookies(res);
   const live = all.find((c) => /JOE_OAUTH_CSRF=/.test(c) && !/Max-Age=0(?:;|$)/.test(c)) ?? "";
@@ -98,7 +120,7 @@ function assertCsrfCookieAttrs(res: Response, host: string): void {
   assert(live.includes("Path=/oauth"), `CSRF Path=/oauth covers GET+POST /oauth/authorize, got ${live}`);
   assert(!/Path=\/(;|$)/.test(live.replace("Path=/oauth", "")), "live CSRF must not use Path=/");
   assert(live.includes("HttpOnly"), "CSRF HttpOnly");
-  assert(live.includes("SameSite=None"), "CSRF SameSite=None so embedded cross-site Approve POST sends the cookie");
+  assert(live.includes("SameSite=None"), "best-effort CSRF cookie stays SameSite=None; Secure (not the Approve authenticator)");
   assert(live.includes("Secure"), "SameSite=None requires Secure");
   assert(!/SameSite=Lax/i.test(live), "live HTTPS CSRF must not be SameSite=Lax (dropped on cross-site POST)");
   assert(!/SameSite=Strict/i.test(joined), "CSRF must not be SameSite=Strict");
@@ -152,12 +174,15 @@ async function completeOAuth(): Promise<string> {
   assert(html.includes("hedgehog_health"), "consent lists public tools");
   assert(html.includes("message_joe"), "consent lists message_joe");
   assert(!html.toLowerCase().includes("helius"), "consent must not mention Helius");
-  const csrf = cookieFrom(consent);
-  assert(csrf.length > 0, "CSRF cookie set");
+  const cookie = cookieFrom(consent);
+  assert(cookie.length > 0, "best-effort CSRF cookie still set");
   assertCsrfCookieAttrs(consent, "mcp.jettoptics.ai");
+  const formCsrf = csrfFromHtml(html);
+  assert(formCsrf.length > 20, "consent HTML has csrf_token");
+  assertSignedCsrf(formCsrf);
 
   const form = new URLSearchParams({
-    csrf_token: csrf.split("=")[1],
+    csrf_token: formCsrf,
     approve: "1",
     client_id: client.client_id,
     redirect_uri: redirectUri,
@@ -168,37 +193,19 @@ async function completeOAuth(): Promise<string> {
     scope: "mcp:tools",
     response_type: "code",
   });
-  const staleOnly = await worker.fetch(
-    new Request(`${ORIGIN}/oauth/authorize`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        Cookie: "JOE_OAUTH_CSRF=stale-leftover-path-root",
-      },
-      body: form.toString(),
-    }),
-    env,
-    ctx,
-  );
-  assert(staleOnly.status === 400, `stale-only CSRF → 400, got ${staleOnly.status}`);
-  const staleOnlyBody = await staleOnly.text();
-  assert(staleOnlyBody.includes("CSRF token mismatch"), "stale-only still mismatches");
 
-  const approved = await worker.fetch(
+  // Grok webview: Cookie jar empty / third-party blocked. Signed form field is enough.
+  const noCookie = await worker.fetch(
     new Request(`${ORIGIN}/oauth/authorize`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        // Stale Path=/ leftover first — must not require cookie clearing.
-        Cookie: `JOE_OAUTH_CSRF=stale-leftover-path-root; ${csrf}`,
-      },
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: form.toString(),
     }),
     env,
     ctx,
   );
-  assert(approved.status === 302, `approve with stale-first cookie → 302, got ${approved.status}`);
-  const loc = approved.headers.get("Location") ?? "";
+  assert(noCookie.status === 302, `cookie-absent + signed form CSRF → 302, got ${noCookie.status}`);
+  const loc = noCookie.headers.get("Location") ?? "";
   assert(loc.startsWith(`${redirectUri}?`), `redirect to SuperGrok callback, got ${loc}`);
   const redirected = new URL(loc);
   const code = redirected.searchParams.get("code");
@@ -225,6 +232,117 @@ async function completeOAuth(): Promise<string> {
   const tokens = (await tokenRes.json()) as { access_token?: string; token_type?: string };
   assert(tokens.token_type === "Bearer" && tokens.access_token, "Bearer access_token");
   return tokens.access_token as string;
+}
+
+async function assertConsentCsrfMatrix(): Promise<void> {
+  const { challenge } = await pkce();
+  const redirectUri = "https://grok.com/oauth/callback";
+  const reg = await worker.fetch(
+    new Request(`${ORIGIN}/oauth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_name: "SuperGrok",
+        redirect_uris: [redirectUri, "https://grok.com/oauth/other"],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+      }),
+    }),
+    env,
+    ctx,
+  );
+  assert(reg.status === 201, `CSRF matrix DCR → 201, got ${reg.status}`);
+  const client = (await reg.json()) as { client_id: string };
+
+  const authorizeUrl = new URL(`${ORIGIN}/oauth/authorize`);
+  authorizeUrl.searchParams.set("response_type", "code");
+  authorizeUrl.searchParams.set("client_id", client.client_id);
+  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
+  authorizeUrl.searchParams.set("code_challenge", challenge);
+  authorizeUrl.searchParams.set("code_challenge_method", "S256");
+  authorizeUrl.searchParams.set("state", "st-csrf");
+  authorizeUrl.searchParams.set("resource", MCP_URL);
+  authorizeUrl.searchParams.set("scope", "mcp:tools");
+
+  const consent = await worker.fetch(new Request(authorizeUrl.toString()), env, ctx);
+  assert(consent.status === 200, `CSRF matrix consent → 200, got ${consent.status}`);
+  const html = await consent.text();
+  const formCsrf = csrfFromHtml(html);
+  const cookie = cookieFrom(consent);
+  assertSignedCsrf(formCsrf);
+
+  const base = {
+    approve: "1",
+    client_id: client.client_id,
+    redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state: "st-csrf",
+    resource: MCP_URL,
+    scope: "mcp:tools",
+    response_type: "code",
+  };
+
+  async function postAuthorize(
+    body: Record<string, string>,
+    cookieHeader?: string,
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/x-www-form-urlencoded",
+    };
+    if (cookieHeader) headers.Cookie = cookieHeader;
+    return worker.fetch(
+      new Request(`${ORIGIN}/oauth/authorize`, {
+        method: "POST",
+        headers,
+        body: new URLSearchParams(body).toString(),
+      }),
+      env,
+      ctx,
+    );
+  }
+
+  const forged = await postAuthorize({ ...base, csrf_token: "forged-not-signed" });
+  assert(forged.status === 400, `forged form CSRF → 400, got ${forged.status}`);
+  assert((await forged.text()).includes("CSRF token mismatch"), "forged mismatch copy");
+
+  const tampered = `${formCsrf.slice(0, -2)}aa`;
+  const tamperedRes = await postAuthorize({ ...base, csrf_token: tampered });
+  assert(tamperedRes.status === 400, `tampered CSRF JWT → 400, got ${tamperedRes.status}`);
+
+  const rebound = await postAuthorize({
+    ...base,
+    csrf_token: formCsrf,
+    redirect_uri: "https://grok.com/oauth/other",
+  });
+  assert(rebound.status === 400, `rebound redirect_uri → 400, got ${rebound.status}`);
+  assert((await rebound.text()).includes("CSRF token mismatch"), "rebind is CSRF mismatch");
+
+  const cookieOnly = await postAuthorize(base, cookie);
+  assert(cookieOnly.status === 400, `cookie alone without form CSRF → 400, got ${cookieOnly.status}`);
+  assert((await cookieOnly.text()).includes("CSRF token mismatch"), "form-required: cookie alone fails");
+
+  const staleCookieUnsignedForm = await postAuthorize(
+    { ...base, csrf_token: cookie.split("=")[1] ?? "stale" },
+    "JOE_OAUTH_CSRF=stale-leftover-path-root",
+  );
+  assert(
+    staleCookieUnsignedForm.status === 400,
+    `stale cookie + unsigned form → 400, got ${staleCookieUnsignedForm.status}`,
+  );
+
+  const grokWebview = await postAuthorize({ ...base, csrf_token: formCsrf });
+  assert(grokWebview.status === 302, `valid signed form, no cookie → 302, got ${grokWebview.status}`);
+  const grokLoc = grokWebview.headers.get("Location") ?? "";
+  assert(grokLoc.startsWith(`${redirectUri}?`), `Grok-webview approve redirects, got ${grokLoc}`);
+
+  const leftoverOk = await postAuthorize(
+    { ...base, csrf_token: formCsrf },
+    "JOE_OAUTH_CSRF=stale-leftover-path-root",
+  );
+  // Second approve of the same consent is fine (stateless JWT). Leftover cookie must not block.
+  assert(leftoverOk.status === 302, `stale cookie + signed form → 302, got ${leftoverOk.status}`);
 }
 
 async function run(): Promise<void> {
@@ -323,6 +441,7 @@ async function run(): Promise<void> {
     assert(!healthSetText.includes("inbox.example.test"), "inboxConfigured must not echo the URL");
 
     fetchCalls = [];
+    await assertConsentCsrfMatrix();
     const access = await completeOAuth();
     assert(
       fetchCalls.every((c) => !c.url.startsWith(AARON_ORIGIN) && !c.url.includes("api.x.com")),
@@ -517,13 +636,14 @@ async function run(): Promise<void> {
     assert(cimdConsent.status === 200, `CIMD consent → 200, got ${cimdConsent.status}`);
     const cimdHtml = await cimdConsent.text();
     assert(cimdHtml.includes("SuperGrok"), "CIMD client_name on consent");
-    const cimdCsrf = cookieFrom(cimdConsent);
+    const cimdFormCsrf = csrfFromHtml(cimdHtml);
+    assertSignedCsrf(cimdFormCsrf);
     const cimdApproved = await worker.fetch(
       new Request(`${ORIGIN}/oauth/authorize`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cimdCsrf },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
-          csrf_token: cimdCsrf.split("=")[1],
+          csrf_token: cimdFormCsrf,
           approve: "1",
           client_id: cimdUrl,
           redirect_uri: cimdRedirect,
