@@ -5,15 +5,18 @@ Public **Cloudflare edge gateway** for AARON attestation routes and HEDGEHOG MCP
 ## Edge gateway layer
 
 ```
-Clients (Cursor, Hermes, jettoptx.chat, agents)
+Clients (Cursor, Hermes, jettoptx.chat, SuperGrok, agents)
         │
         ▼
 jettoptx-aaron-public (Cloudflare Worker)
-  ├── JOE API token gate (MCP paths)
-  ├── SuperGrok MCP OAuth (public 6 tools at /joe/hedgehog — no JOE token paste)
+  ├── CORS: reflect ACAO only for CORS_PROD_DOMAINS / CORS_DEV_DOMAINS
+  ├── Emergency kill-switches (401, never proxy): faucet claim/sol, totp enroll fire, aaron /docs
+  ├── SuperGrok MCP OAuth (DCR + PKCE + signed csrf_token; public 6 tools at /joe/hedgehog)
+  ├── JOE API token gate: /mcp, /joe/mcp, /joe/ore/*, GET /mcp/jettchat
+  ├── GET /x402 catalog (faucet payTo 5ct4 only; not proxied)
   ├── /v MOJO deep-link (302 → jettmojo://verify?s=…)
-  ├── AARON proxy → aaron.jettoptics.ai
-  └── HEDGEHOG MCP → mcp.jettoptics.ai handlers / origin
+  ├── AARON proxy → aaron.jettoptics.ai (ungated attestation / x402/v1 / orphan)
+  └── HEDGEHOG MCP → mcp.jettoptics.ai handlers
 ```
 
 ## Data division of labor
@@ -49,8 +52,10 @@ Full AARON backend (FastAPI on Jetson), mesh credentials, and operator comms are
 
 - No secrets in this repository — Worker secrets via Cloudflare dashboard  
 - MCP auth accepts `Authorization: Bearer` and `X-JOE-Token` only (no query-string keys)
-- SuperGrok custom connectors use OAuth 2.1 (PKCE S256, DCR) on `/joe/hedgehog`; those tokens never authorize ore / mesh / x402  
-- AARON proxy paths (including `/x402/v1/*`) remain ungated at the edge; origin enforces payment/auth
+- CORS: `getCorsHeaders` reflects `Access-Control-Allow-Origin` only for `CORS_PROD_DOMAINS` / `CORS_DEV_DOMAINS` (wrangler allowlist). Missing or foreign Origins omit ACAO (never `*`). Never pair `Access-Control-Allow-Credentials: true` with `*`.
+- SuperGrok custom connectors use OAuth 2.1 (PKCE S256, DCR) on `/joe/hedgehog`; those tokens never authorize ore / mesh / x402 / faucet  
+- SuperGrok Approve CSRF is a hidden `csrf_token` HMAC-JWT (`typ=oauth-csrf`, signed with `MCP_OAUTH_SIGNING_KEY` or `MCP_API_KEY`). Cookie-absent POST + valid signed form succeeds; cookie-only / forged / expired / mismatched `client_id`|`redirect_uri`|`state` fail. Best-effort `JOE_OAUTH_CSRF` is `Path=/oauth` host-only (`mcp.jettoptics.ai`, never `.jettoptics.ai`).
+- AARON proxy paths (including `/x402/v1/*`) remain ungated at the edge; origin enforces payment/auth. Catalog `GET /x402` stays faucet `payTo` `5ct4…` / `jtxfaucet.sol` — do not flip payTo or add Stripe here.
 - Emergency edge kill-switch: `/faucet/claim` and `/faucet/sol` (and exact `/docs`, `/redoc`, `/openapi.json`) return 401 and never proxy. Zone routes are path-exact — the rest of `aaron.jettoptics.ai` stays origin. Durable auth-gate belongs on joe-aaron-router.
 - Emergency leftover-mutator kill-switch: `/jett/totp/enroll` (and verify / gaze/analyze / claim / handshake start+done / hermesync/pair / challenge/scanned / audit/devnet) return 401 and never proxy. `/session`, `/jett/totp/challenge`, `/jett/challenge/create` stay origin/bootstrap.
 - SHIELD4 X OAuth allowlist lives in Worker secret `SHIELD4_ALLOWLIST_JSON` (fail-closed when empty)  
