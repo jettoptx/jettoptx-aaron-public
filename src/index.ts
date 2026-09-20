@@ -189,7 +189,7 @@ export default {
         {
           error: "Not found",
           gateway: "jettoptx-aaron-hedgehog",
-          hint: "Use /mcp, /joe/mcp, /joe/hedgehog (SuperGrok OAuth), /oauth/authorize, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /x402, /orphan/402",
+          hint: "Use /mcp, /joe/mcp, /joe/hedgehog (SuperGrok OAuth), /oauth/authorize, /joe/ore/rpc, /joe/ore/subscribe, /mcp/jettchat, /health, /v, /session, /verify, /gaze, /stdb, /agt, /x402, /orphan/402",
           requestId,
         },
         404,
