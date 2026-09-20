@@ -18,7 +18,7 @@
 
 | Host | Role |
 |------|------|
-| `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, x402 proxy |
+| `aaron.jettoptics.ai` | AARON REST — session, verify, gaze, handshake, stdb, agt, x402 proxy |
 | `mcp.jettoptics.ai` | HEDGEHOG MCP tools + health; SuperGrok OAuth `POST/GET /joe/hedgehog` (public 6 tools including `message_joe`); JOE-gated `GET/POST /joe/mcp` (AddMcpServer); JOE-token `POST/GET /joe/hedgehog` proxy; JOE-gated `POST/GET /joe/ore/rpc` + `GET /joe/ore/subscribe` (ORE/AgenC porch); JOE-gated `GET /mcp/jettchat` census; Discord/mobile MOJO deep-link |
 
 ## MOJO deep-link (`/v`)
@@ -81,7 +81,7 @@ This path is **not** in ungated `AARON_PATHS`, is **not** the JettChat census, a
 
 **Do not** put API keys in the query string (`?key=`). Query credentials leak via access logs, proxies, and `Referer`.
 
-AARON routes (`/session`, `/verify`, `/gaze`, `/x402/v1/*`, `/orphan`, …) are **proxied ungated** by this Worker — payment and origin auth remain on the Jetson AARON router (USDC settlement → `jtxfaucet.sol` / `5ct4…`).
+AARON routes (`/session`, `/verify`, `/gaze`, `/stdb`, `/agt`, `/x402/v1/*`, `/orphan`, …) are **proxied ungated** by this Worker — payment and origin auth remain on the Jetson AARON router (USDC settlement → `jtxfaucet.sol` / `5ct4…`). `/stdb` and `/agt` stay on `AARON_ORIGIN` (Dojo Aaron porch). Do not Worker-first them to `SPACETIME_HTTP_URL` / CF Access service tokens.
 
 **Edge x402 catalog (not proxied):** `GET /x402` returns the faucet catalog (`5ct4…` / `jtxfaucet.sol`) for `chat`, `gaze_analyze`, `task`, and `orphan_donate` only. `prima_title` was removed (Josh 2026-09-03). Payable service paths (`/x402/v1/*`, `/orphan/402`) stay origin-proxied — do not flip them off `5ct4`.
 
@@ -175,7 +175,7 @@ Client  →  Cloudflare Worker (this repo)
               ├── POST/GET /joe/ore/rpc + GET /joe/ore/subscribe → JOE token gate → proxy → AARON_ORIGIN (ORE/AgenC; Helius on origin)
               ├── GET /mcp/jettchat → JOE token gate → proxy → AARON_ORIGIN (census; not AARON_PATHS)
               ├── /mcp, /health     → HEDGEHOG MCP handlers (JOE token gate)
-              └── /session,/verify… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
+              └── /session,/verify,/stdb,/agt… → proxy → aaron.jettoptics.ai (Jetson tunnel; ungated at edge)
 ```
 
 On-chain programs and upgrade authority: [poa-depin README](https://github.com/jettoptx/jettoptx-poa-depin) · [on-chain addresses](https://jettoptx.dev/docs/getting-started/on-chain-addresses).
