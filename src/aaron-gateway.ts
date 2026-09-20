@@ -16,6 +16,12 @@ const AARON_PATHS = [
   "/x402",
   "/orphan",
   "/.well-known/agent-card.json",
+  // Dojo Aaron porch (joe-aaron-router): STDB + AGT. Exact + prefix like other doors.
+  // Stay origin-proxied — do not Worker-first to SPACETIME_HTTP_URL. That var is
+  // the jettchat SQL endpoint; CF Access service tokens stay Worker-internal
+  // (spacetimeAccessHeaders in auth-gate). Attaching them here would bypass Access.
+  "/stdb",
+  "/agt",
   // Do not add /mcp/jettchat — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/hedgehog — JOE-gated in index.ts, then proxyToAaron.
   // Do not add /joe/mcp — JOE-gated in index.ts, then proxyToAaron.

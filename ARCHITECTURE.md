@@ -15,7 +15,7 @@ jettoptx-aaron-public (Cloudflare Worker)
   ├── JOE API token gate: /mcp, /joe/mcp, /joe/ore/*, GET /mcp/jettchat
   ├── GET /x402 catalog (faucet payTo 5ct4 only; not proxied)
   ├── /v MOJO deep-link (302 → jettmojo://verify?s=…)
-  ├── AARON proxy → aaron.jettoptics.ai (ungated attestation / x402/v1 / orphan)
+  ├── AARON proxy → aaron.jettoptics.ai (ungated attestation / stdb / agt / x402/v1 / orphan)
   └── HEDGEHOG MCP → mcp.jettoptics.ai handlers
 ```
 
