@@ -42,21 +42,59 @@ export interface GatewayEnv {
   JOE_INBOX_KEY?: string;
 }
 
-const ALLOWED_METHODS = "GET, POST, PUT, DELETE, OPTIONS";
+/**
+ * No route on this Worker handles PUT. DELETE is only used by MCP Streamable HTTP
+ * session termination (hedgehog /mcp, /joe/hedgehog, /joe/mcp).
+ */
+const BASE_METHODS = "GET, POST, HEAD, OPTIONS";
+const MCP_METHODS = "GET, POST, DELETE, HEAD, OPTIONS";
 
-/** Browser / MCP / x402 headers known public clients send. CF Access service-token headers stay server-side only. */
-const ALLOWED_HEADERS = [
-  "Content-Type",
-  "Authorization",
-  "X-Request-ID",
-  "X-JOE-Token",
-  "X-PAYMENT",
-  "PAYMENT-SIGNATURE",
-  "x-payment",
-  "MCP-Protocol-Version",
-  "Mcp-Session-Id",
-  "Last-Event-ID",
-].join(", ");
+const BASE_HEADERS = ["Content-Type", "X-Request-ID"];
+const AUTH_HEADERS = ["Authorization", "X-JOE-Token"];
+const MCP_HEADERS = ["MCP-Protocol-Version", "Mcp-Session-Id", "Last-Event-ID"];
+/** x402 payment headers: only advertised on payment-bearing routes. */
+const PAYMENT_HEADERS = ["X-PAYMENT", "PAYMENT-SIGNATURE"];
+
+/** MCP transport paths (Streamable HTTP). */
+export function isMcpTransportPath(path: string): boolean {
+  return /^\/(mcp|joe\/mcp|joe\/hedgehog)(\/|$)/.test(path);
+}
+
+/** Routes that accept x402 payment headers (catalog + proxied paid AARON routes). */
+export function isPaymentPath(path: string): boolean {
+  return /^\/(x402|chat|gaze|task|orphan|jett|aaron)(\/|$)/.test(path) || isMcpTransportPath(path);
+}
+
+/** Routes that never take credentials (public metadata / health). */
+export function isPublicNoAuthPath(path: string): boolean {
+  return path === "/health" || path === "/" || path.startsWith("/.well-known/") || path === "/x402";
+}
+
+export function corsPolicyForPath(path: string): { methods: string; headers: string } {
+  const h = [...BASE_HEADERS];
+  if (!isPublicNoAuthPath(path)) h.push(...AUTH_HEADERS);
+  if (isMcpTransportPath(path)) h.push(...MCP_HEADERS);
+  if (isPaymentPath(path)) h.push(...PAYMENT_HEADERS);
+  return { methods: isMcpTransportPath(path) ? MCP_METHODS : BASE_METHODS, headers: h.join(", ") };
+}
+
+/** Security headers applied to every Worker response (does not override per-route values). */
+export function applySecurityHeaders(res: Response): Response {
+  const out = new Response(res.body, res);
+  const h = out.headers;
+  h.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  h.set("X-Content-Type-Options", "nosniff");
+  if (!h.has("Referrer-Policy")) h.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (!h.has("X-Frame-Options")) h.set("X-Frame-Options", "DENY");
+  if (!h.has("Content-Security-Policy")) {
+    // API/JSON surface: nothing should execute. OAuth HTML pages set their own CSP.
+    h.set(
+      "Content-Security-Policy",
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    );
+  }
+  return out;
+}
 
 export function parseCorsAllowlist(env: Pick<GatewayEnv, "CORS_PROD_DOMAINS" | "CORS_DEV_DOMAINS">): string[] {
   return [
@@ -73,7 +111,7 @@ export function originMatchesAllowlist(origin: string, allowed: readonly string[
   if (!origin) return false;
   return allowed.some((pattern) => {
     if (pattern.includes("*")) {
-      const re = new RegExp("^" + pattern.replace(/\./g, "\\.").replace(/\*/g, ".*") + "$");
+      const re = new RegExp("^" + pattern.replace(/\./g, "\\.").replace(/\*/g, "[a-z0-9-]+") + "$");
       return re.test(origin);
     }
     return origin === pattern;
@@ -83,11 +121,12 @@ export function originMatchesAllowlist(origin: string, allowed: readonly string[
 export function getCorsHeaders(request: Request, env: GatewayEnv): Headers {
   const origin = request.headers.get("Origin") || "";
   const allowed = parseCorsAllowlist(env);
+  const policy = corsPolicyForPath(new URL(request.url).pathname);
   const headers = new Headers({
-    "Access-Control-Allow-Methods": ALLOWED_METHODS,
-    "Access-Control-Allow-Headers": ALLOWED_HEADERS,
+    "Access-Control-Allow-Methods": policy.methods,
+    "Access-Control-Allow-Headers": policy.headers,
     "Access-Control-Expose-Headers": "WWW-Authenticate, Mcp-Session-Id, X-Request-ID",
-    "Access-Control-Max-Age": "86400",
+    "Access-Control-Max-Age": "600",
     Vary: "Origin",
   });
 

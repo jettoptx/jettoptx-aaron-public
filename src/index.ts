@@ -28,7 +28,7 @@
  */
 
 import type { GatewayEnv } from "./lib/cors";
-import { getCorsHeaders, addRequestId, jsonResponse } from "./lib/cors";
+import { getCorsHeaders, addRequestId, jsonResponse, applySecurityHeaders } from "./lib/cors";
 import { validateJoeToken } from "./lib/auth-gate";
 import { isAaronPath, isJoeHedgehogPath, isJoeMcpPath, isJoeOrePath, proxyToAaron } from "./aaron-gateway";
 import { isHedgehogPath, handleHedgehog, handleMcpSession, isJettchatCensusPath } from "./hedgehog-mcp";
@@ -56,6 +56,12 @@ import {
 } from "./origin-mutator-kill-switch";
 
 export default {
+  async fetch(request: Request, env: GatewayEnv, ctx: ExecutionContext): Promise<Response> {
+    return applySecurityHeaders(await handle.fetch(request, env, ctx));
+  },
+};
+
+const handle = {
   async fetch(request: Request, env: GatewayEnv, _ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     const requestId = addRequestId(new Headers());
