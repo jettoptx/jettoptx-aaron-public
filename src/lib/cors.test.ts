@@ -76,7 +76,7 @@ function assert(cond: unknown, msg: string): void {
   }
 }
 
-function corsRequest(origin?: string, method = "GET", path = "/x402"): Request {
+function corsRequest(origin?: string, method = "GET", path = "/mcp"): Request {
   const headers = new Headers();
   if (origin !== undefined) {
     headers.set("Origin", origin);
@@ -122,6 +122,19 @@ async function run(): Promise<void> {
   assert(evilHeaders.get("Access-Control-Allow-Origin") === null, "evil Origin must omit ACAO");
   assertNoAcaoStar(evilHeaders, "evil Origin helper");
   assertPublicAllowHeaders(evilHeaders, "evil Origin helper");
+
+  // Path-scoped policy: public catalog/health never advertise auth/payment headers or DELETE/PUT.
+  const healthPolicy = getCorsHeaders(corsRequest("https://aaron.jettoptics.ai", "GET", "/health"), env);
+  const healthAcah = healthPolicy.get("Access-Control-Allow-Headers") ?? "";
+  assert(!healthAcah.includes("Authorization"), "/health ACAH must not include Authorization");
+  assert(!healthAcah.includes("X-PAYMENT"), "/health ACAH must not include X-PAYMENT");
+  assert(!/PUT|DELETE/.test(healthPolicy.get("Access-Control-Allow-Methods") ?? ""), "/health must not allow PUT/DELETE");
+  const mcpMethods = getCorsHeaders(corsRequest("https://aaron.jettoptics.ai", "OPTIONS", "/mcp"), env).get("Access-Control-Allow-Methods") ?? "";
+  assert(mcpMethods.includes("DELETE") && !mcpMethods.includes("PUT"), "/mcp allows DELETE (session end) but never PUT");
+  const sessAcah = getCorsHeaders(corsRequest("https://aaron.jettoptics.ai", "POST", "/oauth/token"), env).get("Access-Control-Allow-Headers") ?? "";
+  assert(!sessAcah.includes("PAYMENT-SIGNATURE"), "/oauth/token must not advertise payment headers");
+  assert(originMatchesAllowlist("https://a.b.evil.example.jettoptics.ai", allowed) === false, "wildcard matches one label only");
+  assert(originMatchesAllowlist("https://evil.example/.jettoptics.ai", allowed) === false, "wildcard cannot span / ");
 
   const missingHeaders = getCorsHeaders(corsRequest(undefined), env);
   assert(missingHeaders.get("Access-Control-Allow-Origin") === null, "missing Origin must omit ACAO");
@@ -178,6 +191,9 @@ async function run(): Promise<void> {
     assert(evilGet.headers.get("Access-Control-Allow-Origin") === null, "evil GET must omit ACAO");
     assertNoAcaoStar(evilGet.headers, "evil GET /x402");
 
+    assert(grokGet.headers.get("Strict-Transport-Security") === "max-age=31536000; includeSubDomains", "HSTS includeSubDomains, no preload");
+    assert(grokGet.headers.get("X-Content-Type-Options") === "nosniff", "nosniff set");
+    assert((grokGet.headers.get("Content-Security-Policy") ?? "").includes("default-src 'none'"), "API CSP default-src 'none'");
     const noOriginGet = await worker.fetch(corsRequest(undefined, "GET", "/x402"), env, ctx);
     assert(noOriginGet.status === 200, `Origin-less GET /x402 still 200, got ${noOriginGet.status}`);
     assert(noOriginGet.headers.get("Access-Control-Allow-Origin") === null, "Origin-less GET must omit ACAO");
