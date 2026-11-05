@@ -108,12 +108,12 @@ async function run(): Promise<void> {
   assert(allowed.includes("https://*.jettoptics.ai"), "binding includes https://*.jettoptics.ai");
   assert(allowed.includes("https://grok.com"), "binding includes https://grok.com");
   assert(allowed.includes("https://*.grok.com"), "binding includes https://*.grok.com");
-  assert(allowed.includes("http://localhost:*"), "binding includes http://localhost:*");
+  assert(!allowed.includes("http://localhost:*"), "prod binding must not include http://localhost:*");
 
   assert(originMatchesAllowlist("https://aaron.jettoptics.ai", allowed) === true, "aaron.jettoptics.ai matches *.jettoptics.ai");
   assert(originMatchesAllowlist("https://grok.com", allowed) === true, "grok.com is allowlisted");
   assert(originMatchesAllowlist("https://chat.grok.com", allowed) === true, "chat.grok.com matches *.grok.com");
-  assert(originMatchesAllowlist("http://localhost:8787", allowed) === true, "localhost:8787 matches localhost:*");
+  assert(originMatchesAllowlist("http://localhost:8787", allowed) === false, "localhost:8787 is not allowlisted in prod");
   assert(originMatchesAllowlist("https://evil.example", allowed) === false, "evil.example is not allowlisted");
   assert(originMatchesAllowlist("https://grok.com.evil.example", allowed) === false, "prefix spoof of grok.com is not allowlisted");
   assert(originMatchesAllowlist("", allowed) === false, "empty Origin is not allowlisted");
