@@ -16,6 +16,17 @@
 import type { GatewayEnv } from "./cors";
 import { looksLikeMcpOauthJwt } from "./mcp-oauth";
 
+/** Constant-time string compare (no early exit on first mismatched byte). */
+export function constantTimeEqual(a: string, b: string): boolean {
+  const enc = new TextEncoder();
+  const ab = enc.encode(a);
+  const bb = enc.encode(b);
+  const len = Math.max(ab.length, bb.length);
+  let diff = ab.length ^ bb.length;
+  for (let i = 0; i < len; i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0);
+  return diff === 0;
+}
+
 export interface AuthResult {
   ok: boolean;
   error?: string;
@@ -505,7 +516,7 @@ export async function validateJoeToken(
       };
     }
 
-    if (mcpApiKey && token === mcpApiKey) {
+    if (mcpApiKey && constantTimeEqual(token, mcpApiKey)) {
       return {
         ok: true,
         identity: "api-key",
@@ -542,7 +553,7 @@ export async function validateJoeToken(
   // Header-only alternate credential path (no query-string keys — they leak via logs/Referer).
   const headerKey = request.headers.get("X-JOE-Token")?.trim();
   if (headerKey) {
-    if (mcpApiKey && headerKey === mcpApiKey) {
+    if (mcpApiKey && constantTimeEqual(headerKey, mcpApiKey)) {
       return {
         ok: true,
         identity: "api-key",
