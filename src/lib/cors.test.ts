@@ -114,6 +114,14 @@ async function run(): Promise<void> {
   assert(originMatchesAllowlist("https://grok.com", allowed) === true, "grok.com is allowlisted");
   assert(originMatchesAllowlist("https://chat.grok.com", allowed) === true, "chat.grok.com matches *.grok.com");
   assert(originMatchesAllowlist("http://localhost:8787", allowed) === true, "localhost:8787 matches localhost:*");
+  // Canonical *.jettoptics.si hosts: exact origins only, no wildcard.
+  for (const host of ["jettoptics.si", "dojo.jettoptics.si", "dev.jettoptics.si", "agency.jettoptics.si"]) {
+    assert(originMatchesAllowlist(`https://${host}`, allowed) === true, `${host} is allowlisted`);
+  }
+  assert(allowed.every((entry) => !entry.includes("*.jettoptics.si")), "no *.jettoptics.si wildcard");
+  assert(originMatchesAllowlist("https://other.jettoptics.si", allowed) === false, "unlisted .si subdomain is not allowlisted");
+  assert(originMatchesAllowlist("https://evil-jettoptics.si", allowed) === false, "lookalike evil-jettoptics.si is not allowlisted");
+  assert(originMatchesAllowlist("https://jettoptics.si.evil.example", allowed) === false, "suffix spoof of jettoptics.si is not allowlisted");
   assert(originMatchesAllowlist("https://evil.example", allowed) === false, "evil.example is not allowlisted");
   assert(originMatchesAllowlist("https://grok.com.evil.example", allowed) === false, "prefix spoof of grok.com is not allowlisted");
   assert(originMatchesAllowlist("", allowed) === false, "empty Origin is not allowlisted");
